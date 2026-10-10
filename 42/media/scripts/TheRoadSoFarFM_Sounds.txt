@@ -1,0 +1,14 @@
+module Base
+{
+    sound TheRoadSoFarFM_TestTrack
+    {
+        category = Music,
+        loop = true,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Kansas-Carry_On_Wayward_Son.ogg,
+            volume = 1.0,
+        }
+    }
+}
