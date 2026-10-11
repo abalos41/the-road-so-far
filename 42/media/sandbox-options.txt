@@ -1,0 +1,8 @@
+VERSION = 1,
+option TheRoadSoFarFM.DisableZombieAttraction
+{
+    type = boolean,
+    default = false,
+    page = TheRoadSoFarFM,
+    translation = TheRoadSoFarFM_DisableZombieAttraction,
+}

@@ -1,0 +1,5 @@
+{
+    "Sandbox_TheRoadSoFarFM": "The Road So Far FM",
+    "Sandbox_TheRoadSoFarFM_DisableZombieAttraction": "Desactivar el ruido de radio que atrae zombis",
+    "Sandbox_TheRoadSoFarFM_DisableZombieAttraction_tooltip": "Al activarlo, las radios de The Road So Far FM no emiten sonidos que atraigan zombis. Al desactivarlo, un volumen más alto atrae zombis desde más lejos."
+}

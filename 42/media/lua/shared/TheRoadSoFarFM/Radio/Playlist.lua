@@ -64,13 +64,31 @@ local function markWelcomePlayed()
     end
 end
 
+local function commercialHasPlayed()
+    if not ModData or not ModData.getOrCreate then
+        error("[TheRoadSoFarFM] Global mod data is unavailable.")
+    end
+
+    local data = ModData.getOrCreate("TheRoadSoFarFM")
+    return data.commercialPlayedInWorld == true
+end
+
+local function markCommercialPlayed()
+    local data = ModData.getOrCreate("TheRoadSoFarFM")
+    data.commercialPlayedInWorld = true
+    if isServer and isServer() and ModData.transmit then
+        ModData.transmit("TheRoadSoFarFM")
+    end
+end
+
 function TheRoadSoFarFMPlaylist.createState(config)
     local tracks = configuredTracks(config)
     if #tracks == 0 then
         error("[TheRoadSoFarFM] Playlist has no tracks.")
     end
 
-    local playWelcome = not welcomeHasPlayed()
+    local customPlaylist = config and config.IsCustomPlaylist
+    local playWelcome = not customPlaylist and not welcomeHasPlayed()
     local shuffled = shuffledTracks(nil, config)
     if playWelcome then
         markWelcomePlayed()
@@ -85,7 +103,6 @@ function TheRoadSoFarFMPlaylist.createState(config)
         tracks = shuffled,
         trackIndex = 1,
         songsSinceCommercial = 0,
-        commercialPlayed = false,
         version = 1,
         lastTrack = nil,
         config = config,
@@ -103,6 +120,13 @@ end
 
 function TheRoadSoFarFMPlaylist.advance(state, config)
     config = config or state.config
+    if config and config.NoCommercials then
+        state.welcome = false
+        nextSong(state, config)
+        state.version = state.version + 1
+        return state
+    end
+
     local songsBeforeCommercial = config and config.SongsBeforeCommercial
         or TheRoadSoFarFMConfig.SongsBeforeCommercial
     local initialChancePercent = config and config.InitialCommercialChancePercent
@@ -126,13 +150,13 @@ function TheRoadSoFarFMPlaylist.advance(state, config)
         state.songsSinceCommercial = state.songsSinceCommercial + 1
         if state.songsSinceCommercial >= songsBeforeCommercial then
             state.songsSinceCommercial = 0
-            local chancePercent = state.commercialPlayed
+            local chancePercent = commercialHasPlayed()
                 and repeatChancePercent
                 or initialChancePercent
             if randomIndex(100) <= chancePercent then
                 state.sound = commercial
                 state.kind = "commercial"
-                state.commercialPlayed = true
+                markCommercialPlayed()
             else
                 nextSong(state, config)
             end
@@ -147,11 +171,15 @@ end
 
 function TheRoadSoFarFMPlaylist.forceCommercial(state, config)
     config = config or state.config
+    if config and config.NoCommercials then
+        return state
+    end
+
     state.sound = config and config.Commercial or TheRoadSoFarFMConfig.Commercial
     state.kind = "commercial"
     state.welcome = false
     state.songsSinceCommercial = 0
-    state.commercialPlayed = true
+    markCommercialPlayed()
     state.version = state.version + 1
     return state
 end

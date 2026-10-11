@@ -1,6 +1,7 @@
 TheRoadSoFarFMConfig = TheRoadSoFarFMConfig or {}
 
 TheRoadSoFarFMConfig.Tracks = {
+    "TRSF_ACDCHighwayToHell",
     "TRSF_AsiaHeatOfTheMoment",
     "TRSF_BostonForeplayLongTime",
     "TRSF_BostonPeaceOfMind",
@@ -23,6 +24,7 @@ TheRoadSoFarFMConfig.Tracks = {
 }
 
 TheRoadSoFarFMConfig.TrackTitles = {
+    TRSF_ACDCHighwayToHell = "ACDC - Highway to Hell",
     TRSF_AsiaHeatOfTheMoment = "Asia - Heat of the Moment",
     TRSF_BostonForeplayLongTime = "Boston - Foreplay / Long Time",
     TRSF_BostonPeaceOfMind = "Boston - Peace of Mind",
@@ -44,8 +46,8 @@ TheRoadSoFarFMConfig.TrackTitles = {
     TRSF_VanHalenPanama = "Van Halen - Panama",
 }
 
-TheRoadSoFarFMConfig.SongsBeforeCommercial = 9
-TheRoadSoFarFMConfig.InitialCommercialChancePercent = 20
-TheRoadSoFarFMConfig.RepeatCommercialChancePercent = 10
+TheRoadSoFarFMConfig.SongsBeforeCommercial = 5
+TheRoadSoFarFMConfig.InitialCommercialChancePercent = 50
+TheRoadSoFarFMConfig.RepeatCommercialChancePercent = 15
 TheRoadSoFarFMConfig.Commercial = "TRSF_Commercial"
 TheRoadSoFarFMConfig.Rewind = "TRSF_Rewind"

@@ -8,12 +8,10 @@ if (-not $Mod42Directory) {
     $Mod42Directory = Split-Path -Parent $PSScriptRoot
 }
 $mod42Directory = [System.IO.Path]::GetFullPath($Mod42Directory)
-$playlistDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM\SingleplayerPlaylist"
-$generatedSoundDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM\SingleplayerPlaylist_Generated"
-$seedMarker = Join-Path $playlistDirectory ".trsf-defaults-copied"
-$defaultSongsDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM"
-$soundOutputPath = Join-Path $mod42Directory "media\scripts\TheRoadSoFarFM_UserPlaylist_Sounds.txt"
-$luaOutputDirectory = Join-Path $mod42Directory "media\lua\shared\TheRoadSoFarFM_Custom"
+$radioDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM\Radio"
+$playlistDirectory = Join-Path $radioDirectory "UserTracks"
+$soundOutputPath = Join-Path $mod42Directory "media\scripts\TheRoadSoFarFM_Radio_UserPlaylist_Sounds.txt"
+$luaOutputDirectory = Join-Path $mod42Directory "media\lua\shared\TheRoadSoFarFM\Radio\Custom"
 $luaOutputPath = Join-Path $luaOutputDirectory "Playlist.lua"
 
 function Write-Utf8FileWithoutBom {
@@ -43,30 +41,28 @@ function ConvertTo-AsciiTitle {
 try {
     New-Item -ItemType Directory -Path $playlistDirectory -Force | Out-Null
 
-    if (-not (Test-Path -LiteralPath $seedMarker)) {
-        $defaultSongs = Get-ChildItem -LiteralPath $defaultSongsDirectory -File -Filter '*.ogg'
-        foreach ($song in $defaultSongs) {
-            $destination = Join-Path $playlistDirectory $song.Name
-            if (-not (Test-Path -LiteralPath $destination)) {
-                Copy-Item -LiteralPath $song.FullName -Destination $destination
-            }
-        }
-        Write-Utf8FileWithoutBom -Path $seedMarker -Content "initialized"
-        Write-Host "Se copiaron las canciones originales que aun no existian en la carpeta personalizada."
-    }
-
     $inputFiles = Get-ChildItem -LiteralPath $playlistDirectory -File |
         Where-Object { $_.Extension -match '^\.(ogg|mp3)$' } |
         Sort-Object Name
     if (-not $inputFiles) {
-        throw "No hay canciones en '$playlistDirectory'. Añade archivos MP3 u OGG y vuelve a ejecutar el generador."
+        foreach ($outputPath in @($soundOutputPath, $luaOutputPath)) {
+            if (Test-Path -LiteralPath $outputPath) {
+                Remove-Item -LiteralPath $outputPath -Force
+            }
+        }
+        throw "No music files were found in '$playlistDirectory'. Add MP3 or OGG files and run the generator again."
     }
 
-    New-Item -ItemType Directory -Path $generatedSoundDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path (Split-Path -Parent $soundOutputPath) -Force | Out-Null
     New-Item -ItemType Directory -Path (Split-Path -Parent $luaOutputPath) -Force | Out-Null
-    Get-ChildItem -LiteralPath $generatedSoundDirectory -File -Filter 'TRSF_Custom_*' |
-        Remove-Item -Force
+    $legacyGeneratedSoundDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM\Radio\SingleplayerPlaylist_Generated"
+    if (Test-Path -LiteralPath $legacyGeneratedSoundDirectory) {
+        Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -File -Filter 'TRSF_Custom_*' |
+            Remove-Item -Force
+        if (-not (Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -Force)) {
+            Remove-Item -LiteralPath $legacyGeneratedSoundDirectory
+        }
+    }
 
     $soundDefinitions = [System.Collections.Generic.List[string]]::new()
     $trackIdentifiers = [System.Collections.Generic.List[string]]::new()
@@ -80,16 +76,14 @@ try {
             $slug = "Song"
         }
 
-        $soundName = "TRSF_Custom_$slug"
+        $soundName = "TRSF_UserTracks_$slug"
         $suffix = 2
         while ($usedIdentifiers.ContainsKey($soundName)) {
-            $soundName = "TRSF_Custom_${slug}_$suffix"
+            $soundName = "TRSF_UserTracks_${slug}_$suffix"
             $suffix++
         }
         $usedIdentifiers[$soundName] = $true
 
-        $generatedFileName = "$soundName$($inputFile.Extension.ToLowerInvariant())"
-        Copy-Item -LiteralPath $inputFile.FullName -Destination (Join-Path $generatedSoundDirectory $generatedFileName) -Force
         $trackIdentifiers.Add($soundName)
         $trackTitle = ConvertTo-AsciiTitle ([System.IO.Path]::GetFileNameWithoutExtension($inputFile.Name))
         $trackTitles.Add("    $soundName = " + (ConvertTo-LuaString $trackTitle) + ',')
@@ -101,7 +95,7 @@ try {
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/SingleplayerPlaylist_Generated/$generatedFileName,
+            file = media/sound/TheRoadSoFarFM/Radio/UserTracks/$($inputFile.Name),
             volume = 1.0,
         }
     }
@@ -112,7 +106,9 @@ try {
     $luaTracks = ($trackIdentifiers | ForEach-Object { '    "' + $_ + '",' }) -join "`r`n"
     $luaTitles = $trackTitles -join "`r`n"
     $luaPlaylist = @"
-TheRoadSoFarFMCustomPlaylist = {
+TheRoadSoFarFMUserTracksConfig = {
+    IsCustomPlaylist = true,
+    NoCommercials = true,
     Tracks = {
 $luaTracks
     },
@@ -126,10 +122,10 @@ $luaTitles
     Write-Utf8FileWithoutBom -Path $luaOutputPath -Content $luaPlaylist
 
     Write-Host ""
-    Write-Host "Playlist singleplayer generada con $($trackIdentifiers.Count) canciones dentro del mod."
-    Write-Host "Canciones: $playlistDirectory"
-    Write-Host "Reinicia el juego para cargar los nuevos sonidos."
-    Write-Host "Multiplayer conserva la playlist normal del mod."
+    Write-Host "User Tracks FM (100.2 MHz) was generated with $($trackIdentifiers.Count) songs."
+    Write-Host "Songs folder: $playlistDirectory"
+    Write-Host "Restart Project Zomboid to load the new sound definitions."
+    Write-Host "Custom User Tracks are singleplayer-only; multiplayer keeps the default playlist."
 }
 catch {
     Write-Error $_
