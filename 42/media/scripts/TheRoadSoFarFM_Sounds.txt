@@ -1,13 +1,233 @@
 module Base
 {
-    sound TheRoadSoFarFM_TestTrack
+    sound TRSF_AsiaHeatOfTheMoment
     {
         category = Music,
-        loop = true,
+        loop = false,
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Kansas-Carry_On_Wayward_Son.ogg,
+            file = media/sound/TheRoadSoFarFM/Asia - Heat Of The Moment.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_BostonForeplayLongTime
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/BOSTON - Foreplay Long Time.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_BostonPeaceOfMind
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/BOSTON - Peace of Mind.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_BlackSabbathParanoid
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Black Sabbath - Paranoid.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_BonJoviWantedDeadOrAlive
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Bon Jovi - Wanted Dead Or Alive.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_CreamWhiteRoom
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cream - White Room.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_CCRBadMoonRising
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Creedence Clearwater Revival - Bad Moon Rising.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_ForeignerColdAsIce
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Foreigner - Cold as Ice.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_ForeignerHotBlooded
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Foreigner - Hot Blooded.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_IronButterflyInAGaddaDaVida
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Iron Butterfly - In A Gadda Da Vida.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_KansasCarryOnWaywardSon
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Kansas - Carry On Wayward Son.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MetallicaWhiplash
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Metallica - Whiplash.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MotorheadAceOfSpades
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Motorhead - Ace Of Spades.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MotleyCrueKickstartMyHeart
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Motley Crue - Kickstart My Heart.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_SurvivorEyeOfTheTiger
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Survivor - Eye of the Tiger.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_TheAnimalsHouseOfTheRisingSun
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/The Animals - The House Of The Rising Sun.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_RollingStonesSympathyForTheDevil
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/The Rolling Stones - Sympathy For The Devil.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_ThreeDogNightOne
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Three Dog Night - One.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_VanHalenPanama
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Van Halen - Panama.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Commercial
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/extra/commercial.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Rewind
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/extra/rewind.ogg,
             volume = 1.0,
         }
     }
