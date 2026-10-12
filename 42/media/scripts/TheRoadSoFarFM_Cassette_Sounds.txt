@@ -1,0 +1,157 @@
+module Base
+{
+    sound TRSF_Cassette_Inserting
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Extra/inserting-cassette.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_WholeLottaLove
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Whole Lotta Love.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_StairwayToHeaven
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Stairway to Heaven.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_Kashmir
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Kashmir.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_TheOcean
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/The Ocean.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_RambleOn
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Ramble On.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_DazedAndConfused
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Dazed and Confused.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_ImmigrantSong
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Immigrant Song.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_RockAndRoll
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Rock and Roll.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_WhatIsAndWhatShouldNeverBe
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/What Is and What Should Never Be.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_WhenTheLeveeBreaks
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/When the Levee Breaks.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_GoodTimesBadTimes
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Good Times Bad Times.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_BlackDog
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Black Dog.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_Cassette_GoingToCalifornia
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/TheRoadSoFarFM/Cassette/Going to California.ogg,
+            volume = 1.0,
+        }
+    }
+}
