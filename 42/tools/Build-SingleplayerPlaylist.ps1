@@ -8,9 +8,9 @@ if (-not $Mod42Directory) {
     $Mod42Directory = Split-Path -Parent $PSScriptRoot
 }
 $mod42Directory = [System.IO.Path]::GetFullPath($Mod42Directory)
-$radioDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM\Radio"
+$radioDirectory = Join-Path $mod42Directory "media\sound\Radio"
 $playlistDirectory = Join-Path $radioDirectory "UserTracks"
-$soundOutputPath = Join-Path $mod42Directory "media\scripts\TheRoadSoFarFM_Radio_UserPlaylist_Sounds.txt"
+$soundOutputPath = Join-Path $mod42Directory "media\scripts\Radio_UserPlaylist_Sounds.txt"
 $luaOutputDirectory = Join-Path $mod42Directory "media\lua\shared\TheRoadSoFarFM\Radio\Custom"
 $luaOutputPath = Join-Path $luaOutputDirectory "Playlist.lua"
 
@@ -55,7 +55,7 @@ try {
 
     New-Item -ItemType Directory -Path (Split-Path -Parent $soundOutputPath) -Force | Out-Null
     New-Item -ItemType Directory -Path (Split-Path -Parent $luaOutputPath) -Force | Out-Null
-    $legacyGeneratedSoundDirectory = Join-Path $mod42Directory "media\sound\TheRoadSoFarFM\Radio\SingleplayerPlaylist_Generated"
+    $legacyGeneratedSoundDirectory = Join-Path $mod42Directory "media\sound\Radio\SingleplayerPlaylist_Generated"
     if (Test-Path -LiteralPath $legacyGeneratedSoundDirectory) {
         Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -File -Filter 'TRSF_Custom_*' |
             Remove-Item -Force
@@ -95,7 +95,7 @@ try {
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Radio/UserTracks/$($inputFile.Name),
+            file = media/sound/Radio/UserTracks/$($inputFile.Name),
             volume = 1.0,
         }
     }

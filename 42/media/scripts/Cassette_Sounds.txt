@@ -7,7 +7,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Extra/inserting-cassette.ogg,
+            file = media/sound/Cassette/Extra/inserting-cassette.ogg,
             volume = 1.0,
         }
     }
@@ -18,7 +18,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Whole Lotta Love.ogg,
+            file = media/sound/Cassette/Whole Lotta Love.ogg,
             volume = 1.0,
         }
     }
@@ -29,7 +29,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Stairway to Heaven.ogg,
+            file = media/sound/Cassette/Stairway to Heaven.ogg,
             volume = 1.0,
         }
     }
@@ -40,7 +40,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Kashmir.ogg,
+            file = media/sound/Cassette/Kashmir.ogg,
             volume = 1.0,
         }
     }
@@ -51,7 +51,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/The Ocean.ogg,
+            file = media/sound/Cassette/The Ocean.ogg,
             volume = 1.0,
         }
     }
@@ -62,7 +62,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Ramble On.ogg,
+            file = media/sound/Cassette/Ramble On.ogg,
             volume = 1.0,
         }
     }
@@ -73,7 +73,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Dazed and Confused.ogg,
+            file = media/sound/Cassette/Dazed and Confused.ogg,
             volume = 1.0,
         }
     }
@@ -84,7 +84,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Immigrant Song.ogg,
+            file = media/sound/Cassette/Immigrant Song.ogg,
             volume = 1.0,
         }
     }
@@ -95,7 +95,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Rock and Roll.ogg,
+            file = media/sound/Cassette/Rock and Roll.ogg,
             volume = 1.0,
         }
     }
@@ -106,7 +106,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/What Is and What Should Never Be.ogg,
+            file = media/sound/Cassette/What Is and What Should Never Be.ogg,
             volume = 1.0,
         }
     }
@@ -117,7 +117,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/When the Levee Breaks.ogg,
+            file = media/sound/Cassette/When the Levee Breaks.ogg,
             volume = 1.0,
         }
     }
@@ -128,7 +128,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Good Times Bad Times.ogg,
+            file = media/sound/Cassette/Good Times Bad Times.ogg,
             volume = 1.0,
         }
     }
@@ -139,7 +139,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Black Dog.ogg,
+            file = media/sound/Cassette/Black Dog.ogg,
             volume = 1.0,
         }
     }
@@ -150,7 +150,7 @@ module Base
         is3D = false,
         clip
         {
-            file = media/sound/TheRoadSoFarFM/Cassette/Going to California.ogg,
+            file = media/sound/Cassette/Going to California.ogg,
             volume = 1.0,
         }
     }

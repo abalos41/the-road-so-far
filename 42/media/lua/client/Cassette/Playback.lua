@@ -3,6 +3,7 @@ local DEVICE_HANDOFF_WINDOW_MS = 5000
 local MODULE = "TheRoadSoFarFM"
 local activePlayers = {}
 local missingEmitterWarningReported = false
+local missingMediaStateSetterWarningReported = false
 local deviceSoundRangeWarningReported = false
 local worldSoundApiWarningReported = false
 local nextNoiseKey = 0
@@ -127,6 +128,35 @@ local function stopPlayback(deviceData, state)
         state.emitter:stopSound(state.handle)
     end
     activePlayers[deviceData] = nil
+end
+
+local function stopCassettePlayback(deviceData)
+    local state = activePlayers[deviceData]
+    if not state then
+        return false
+    end
+
+    stopPlayback(deviceData, state)
+    if deviceData:isPlayingMedia() then
+        deviceData:StopPlayMedia()
+    end
+    if deviceData.setIsPlayingMedia then
+        deviceData:setIsPlayingMedia(false)
+    end
+    return true
+end
+
+local function restoreMediaPlayingState(deviceData)
+    if not deviceData.setIsPlayingMedia then
+        if not missingMediaStateSetterWarningReported then
+            print("[TheRoadSoFarFM] Cannot sync cassette controls: radio media-state API is unavailable.")
+            missingMediaStateSetterWarningReported = true
+        end
+        return false
+    end
+
+    deviceData:setIsPlayingMedia(true)
+    return deviceData:isPlayingMedia()
 end
 
 local function announceTrackTitle(track, deviceData, state)
@@ -281,6 +311,11 @@ local function processDevice(device, player, seenDevices)
         return
     end
 
+    local inventoryDevice = isInventoryDevice(deviceData) == true
+    if state and not deviceData:isPlayingMedia() then
+        restoreMediaPlayingState(deviceData)
+    end
+
     if state and state.missingSince
         and getTimestampMs() - state.missingSince > DEVICE_HANDOFF_WINDOW_MS then
         stopPlayback(deviceData, state)
@@ -297,7 +332,6 @@ local function processDevice(device, player, seenDevices)
         end
         activePlayers[deviceData] = state
     end
-
     if state.complete and canStartPlayback then
         state = newPlaybackState(deviceData, player, device)
         if not state then
@@ -420,3 +454,64 @@ local function updateCassettePlayback(player)
 end
 
 Events.OnPlayerUpdate.Add(updateCassettePlayback)
+
+require "RadioCom/ISRadioAction"
+
+if not ISRadioAction.TheRoadSoFarFMCassetteHooked then
+    local originalTogglePlayMedia = ISRadioAction.performTogglePlayMedia
+    ISRadioAction.performTogglePlayMedia = function(action)
+        local deviceData = action.deviceData
+        local mediaData = deviceData and deviceData:getMediaData()
+        if mediaData and mediaData:getId() == CASSETTE_MEDIA_ID then
+            if stopCassettePlayback(deviceData) then
+                return
+            else
+                originalTogglePlayMedia(action)
+            end
+            return
+        end
+
+        originalTogglePlayMedia(action)
+    end
+    ISRadioAction.TheRoadSoFarFMCassetteHooked = true
+end
+
+require "RadioCom/RadioWindowModules/RWMMedia"
+
+if not RWMMedia.TheRoadSoFarFMCassetteHooked then
+    local originalUpdate = RWMMedia.update
+    local originalTogglePlayMedia = RWMMedia.togglePlayMedia
+
+    RWMMedia.togglePlayMedia = function(panel)
+        local deviceData = panel.deviceData
+        local mediaData = deviceData and deviceData:getMediaData()
+        local canInteract = panel.player
+            and deviceData
+            and deviceData:canPlayerRemoteInteract(panel.player)
+            or panel:doWalkTo()
+
+        if mediaData and mediaData:getId() == CASSETTE_MEDIA_ID
+            and activePlayers[deviceData]
+            and deviceData:getIsTurnedOn()
+            and deviceData:hasMedia()
+            and canInteract then
+            stopCassettePlayback(deviceData)
+            return
+        end
+
+        originalTogglePlayMedia(panel)
+    end
+
+    RWMMedia.update = function(panel)
+        originalUpdate(panel)
+
+        local deviceData = panel.deviceData
+        local mediaData = deviceData and deviceData:getMediaData()
+        if mediaData and mediaData:getId() == CASSETTE_MEDIA_ID
+            and activePlayers[deviceData]
+            and panel.toggleOnOffButton then
+            panel.toggleOnOffButton:setTitle(panel.textStop)
+        end
+    end
+    RWMMedia.TheRoadSoFarFMCassetteHooked = true
+end
