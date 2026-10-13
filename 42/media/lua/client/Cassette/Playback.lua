@@ -2,11 +2,53 @@ local CASSETTE_MEDIA_ID = "TheRoadSoFarFM_DeansTop13ZeppTraxx"
 local DEVICE_HANDOFF_WINDOW_MS = 5000
 local MODULE = "TheRoadSoFarFM"
 local activePlayers = {}
-local missingEmitterWarningReported = false
 local missingMediaStateSetterWarningReported = false
 local deviceSoundRangeWarningReported = false
 local worldSoundApiWarningReported = false
+local freeEmitterWarningReported = false
+local emitterPositionWarningReported = false
+local emitter3DWarningReported = false
 local nextNoiseKey = 0
+
+local function getFreeEmitterAt(x, y, z, soundDescription)
+    local world = getWorld and getWorld()
+    if not world or not world.getFreeEmitter then
+        if not freeEmitterWarningReported then
+            print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": world free-emitter API is unavailable.")
+            freeEmitterWarningReported = true
+        end
+        return nil
+    end
+
+    local emitter = world:getFreeEmitter(x, y, z)
+    if not emitter then
+        print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": no free sound emitter is available.")
+        return nil
+    end
+    if not emitter.setPos then
+        if not emitterPositionWarningReported then
+            print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": sound emitter position API is unavailable.")
+            emitterPositionWarningReported = true
+        end
+        return nil
+    end
+
+    emitter:setPos(x, y, z)
+    return emitter
+end
+
+local function setEmitter3D(emitter, soundHandle, is3D, soundDescription)
+    if not emitter.set3D then
+        if not emitter3DWarningReported then
+            print("[TheRoadSoFarFM] Cannot configure " .. soundDescription .. ": sound emitter 3D API is unavailable.")
+            emitter3DWarningReported = true
+        end
+        return false
+    end
+
+    emitter:set3D(soundHandle, is3D)
+    return true
+end
 
 local function zombieAttractionDisabled()
     return SandboxVars and SandboxVars.TheRoadSoFarFM
@@ -15,6 +57,42 @@ end
 
 local function isInventoryDevice(deviceData)
     return deviceData.isInventoryDevice and deviceData:isInventoryDevice()
+end
+
+local function cassetteSoundSource(deviceData, state)
+    if isInventoryDevice(deviceData) then
+        return state.player
+    end
+
+    if instanceof(state.device, "VehiclePart") then
+        local vehicle = state.device:getVehicle()
+        if vehicle then
+            return vehicle
+        end
+    elseif instanceof(state.device, "IsoObject") then
+        return state.device
+    end
+
+    return state.player
+end
+
+local function playCassetteSound(deviceData, state, soundName)
+    local emitter = state.emitter
+    if emitter.playSoundImpl then
+        local handle = emitter:playSoundImpl(soundName, cassetteSoundSource(deviceData, state))
+        if handle and handle ~= 0 then
+            return handle
+        end
+    end
+
+    if emitter.playSound then
+        local handle = emitter:playSound(soundName)
+        if handle and handle ~= 0 then
+            return handle
+        end
+    end
+
+    return nil
 end
 
 local function devicePosition(device, deviceData, player)
@@ -44,6 +122,25 @@ local function devicePosition(device, deviceData, player)
         z = player:getZ()
     end
     return x, y, z
+end
+
+local function updateEmitterSpatialization(deviceData, state)
+    local x, y, z = devicePosition(state.device, deviceData, state.player)
+    if state.emitterX ~= x or state.emitterY ~= y or state.emitterZ ~= z then
+        state.emitter:setPos(x, y, z)
+        state.emitterX = x
+        state.emitterY = y
+        state.emitterZ = z
+    end
+
+    local is3D = not isInventoryDevice(deviceData)
+    if state.emitterIs3D ~= is3D then
+        if not setEmitter3D(state.emitter, state.handle, is3D, "cassette audio") then
+            return false
+        end
+        state.emitterIs3D = is3D
+    end
+    return true
 end
 
 local function updateZombieAttraction(player, state, device, deviceData)
@@ -211,9 +308,27 @@ local function startCurrentSound(deviceData, state)
         soundDescription = "track " .. track.File
     end
 
-    state.handle = state.emitter:playSound(soundName)
+    local x, y, z = devicePosition(state.device, deviceData, state.player)
+    local emitter = getFreeEmitterAt(x, y, z, soundDescription)
+    if not emitter then
+        state.failed = true
+        return false
+    end
+    state.emitter = emitter
+    state.emitterX = x
+    state.emitterY = y
+    state.emitterZ = z
+    state.emitterIs3D = nil
+
+    state.handle = playCassetteSound(deviceData, state, soundName)
     if not state.handle then
         print("[TheRoadSoFarFM] Cassette playback failed to start " .. soundDescription .. ".")
+        state.failed = true
+        return false
+    end
+    if not updateEmitterSpatialization(deviceData, state) then
+        state.emitter:stopSound(state.handle)
+        state.handle = nil
         state.failed = true
         return false
     end
@@ -222,17 +337,7 @@ local function startCurrentSound(deviceData, state)
 end
 
 local function newPlaybackState(deviceData, player, device)
-    local emitter = player:getEmitter()
-    if not emitter then
-        if not missingEmitterWarningReported then
-            print("[TheRoadSoFarFM] Cassette playback could not start: player sound emitter is unavailable.")
-            missingEmitterWarningReported = true
-        end
-        return nil
-    end
-
     local state = {
-        emitter = emitter,
         trackIndex = 1,
         stage = "inserting",
         device = device,
@@ -355,6 +460,12 @@ local function processDevice(device, player, seenDevices)
 
     if state.handle then
         if state.emitter:isPlaying(state.handle) then
+            if not updateEmitterSpatialization(deviceData, state) then
+                state.emitter:stopSound(state.handle)
+                state.handle = nil
+                state.failed = true
+                return
+            end
             state.emitter:setVolume(state.handle, deviceData:getDeviceVolume())
             return
         end
@@ -401,6 +512,10 @@ function TheRoadSoFarFMCassette.skip()
 end
 
 local function updateCassettePlayback(player)
+    if player ~= getPlayer() then
+        return
+    end
+
     local radio = getZomboidRadio()
     if not radio then
         return

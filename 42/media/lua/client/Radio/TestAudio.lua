@@ -19,6 +19,49 @@ local WELCOME_ANNOUNCEMENT_DELAY = 120
 local missingUserTracksPlaylistReported = false
 local worldSoundApiWarningReported = false
 local deviceSoundRangeWarningReported = false
+local freeEmitterWarningReported = false
+local emitterPositionWarningReported = false
+local emitter3DWarningReported = false
+
+local function getFreeEmitterAt(x, y, z, soundDescription)
+    local world = getWorld and getWorld()
+    if not world or not world.getFreeEmitter then
+        if not freeEmitterWarningReported then
+            print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": world free-emitter API is unavailable.")
+            freeEmitterWarningReported = true
+        end
+        return nil
+    end
+
+    local emitter = world:getFreeEmitter(x, y, z)
+    if not emitter then
+        print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": no free sound emitter is available.")
+        return nil
+    end
+    if not emitter.setPos then
+        if not emitterPositionWarningReported then
+            print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": sound emitter position API is unavailable.")
+            emitterPositionWarningReported = true
+        end
+        return nil
+    end
+
+    emitter:setPos(x, y, z)
+    return emitter
+end
+
+local function setEmitter3D(emitter, soundHandle, is3D, soundDescription)
+    if not emitter.set3D then
+        if not emitter3DWarningReported then
+            print("[TheRoadSoFarFM] Cannot configure " .. soundDescription .. ": sound emitter 3D API is unavailable.")
+            emitter3DWarningReported = true
+        end
+        return false
+    end
+
+    emitter:set3D(soundHandle, is3D)
+    return true
+end
 
 local function zombieAttractionDisabled()
     return SandboxVars and SandboxVars.TheRoadSoFarFM
@@ -94,13 +137,27 @@ function TheRoadSoFarFMTestAudio.play()
     if testSound and testEmitter then
         testEmitter:stopSound(testSound)
     end
+    testEmitter = nil
+    testSound = nil
 
-    testEmitter = player:getEmitter()
+    testEmitter = getFreeEmitterAt(
+        player:getX(),
+        player:getY(),
+        player:getZ(),
+        "test audio"
+    )
+    if not testEmitter then
+        return
+    end
     local playlistConfig = TheRoadSoFarFMConfig
     testSound = testEmitter:playSound(playlistConfig.Tracks[1])
     if not testSound then
         print("[TheRoadSoFarFM] Failed to start the first playlist track.")
         testEmitter = nil
+    elseif not setEmitter3D(testEmitter, testSound, false, "test audio") then
+        testEmitter:stopSound(testSound)
+        testEmitter = nil
+        testSound = nil
     end
 end
 
@@ -215,6 +272,25 @@ local function devicePosition(device, player)
     return x, y, z
 end
 
+local function updateTrackEmitter(track, player)
+    local x, y, z = devicePosition(track.device, player)
+    if track.emitterX ~= x or track.emitterY ~= y or track.emitterZ ~= z then
+        track.emitter:setPos(x, y, z)
+        track.emitterX = x
+        track.emitterY = y
+        track.emitterZ = z
+    end
+
+    local is3D = not isInventoryDevice(track.deviceData)
+    if track.emitterIs3D ~= is3D then
+        if not setEmitter3D(track.emitter, track.soundHandle, is3D, track.soundName) then
+            return false
+        end
+        track.emitterIs3D = is3D
+    end
+    return true
+end
+
 local function updateZombieAttraction(player, key, device, deviceData)
     if zombieAttractionDisabled() then
         worldSoundCounters[key] = nil
@@ -288,6 +364,10 @@ local function updateZombieAttraction(player, key, device, deviceData)
 end
 
 local function updateTrackVolume(track, player)
+    if not updateTrackEmitter(track, player) then
+        return
+    end
+
     local deviceX, deviceY, deviceZ = devicePosition(track.device, player)
     local dx = player:getX() - deviceX
     local dy = player:getY() - deviceY
@@ -325,6 +405,7 @@ local function startTrack(key, device, deviceData, player, playback)
                         return nil
                     end
                     existing.soundHandle = soundHandle
+                    existing.emitterIs3D = nil
                 end
                 existing.unavailable = false
                 existing.volume = nil
@@ -334,15 +415,20 @@ local function startTrack(key, device, deviceData, player, playback)
         stopTrack(key)
     end
 
-    local emitter = player:getEmitter()
+    local x, y, z = devicePosition(device, player)
+    local emitter = getFreeEmitterAt(x, y, z, playback.soundName)
     if not emitter then
-        print("[TheRoadSoFarFM] No sound emitter is available for " .. playback.soundName .. ".")
         return nil
     end
 
     local soundHandle = emitter:playSound(playback.soundName)
     if not soundHandle then
         print("[TheRoadSoFarFM] Failed to start sound " .. playback.soundName .. ".")
+        return nil
+    end
+    local is3D = not isInventoryDevice(deviceData)
+    if not setEmitter3D(emitter, soundHandle, is3D, playback.soundName) then
+        emitter:stopSound(soundHandle)
         return nil
     end
 
@@ -359,6 +445,10 @@ local function startTrack(key, device, deviceData, player, playback)
         version = playback.version,
         advanceRequested = false,
         volume = nil,
+        emitterIs3D = is3D,
+        emitterX = x,
+        emitterY = y,
+        emitterZ = z,
     }
     activeTracks[key] = track
     if isInventoryDevice(deviceData) then

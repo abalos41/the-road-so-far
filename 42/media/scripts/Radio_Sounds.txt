@@ -8,7 +8,7 @@ module Base
         clip
         {
             file = media/sound/Radio/ACDC - Highway to Hell.ogg,
-            volume = 1.0,
+            volume = 0.328,
         }
     }
     sound TRSF_AsiaHeatOfTheMoment
@@ -19,7 +19,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Asia - Heat Of The Moment.ogg,
-            volume = 1.0,
+            volume = 0.459,
         }
     }
     sound TRSF_BostonForeplayLongTime
@@ -30,7 +30,7 @@ module Base
         clip
         {
             file = media/sound/Radio/BOSTON - Foreplay Long Time.ogg,
-            volume = 1.0,
+            volume = 0.406,
         }
     }
     sound TRSF_BostonPeaceOfMind
@@ -41,7 +41,7 @@ module Base
         clip
         {
             file = media/sound/Radio/BOSTON - Peace of Mind.ogg,
-            volume = 1.0,
+            volume = 0.363,
         }
     }
     sound TRSF_BlackSabbathParanoid
@@ -52,7 +52,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Black Sabbath - Paranoid.ogg,
-            volume = 1.0,
+            volume = 0.707,
         }
     }
     sound TRSF_BonJoviWantedDeadOrAlive
@@ -63,7 +63,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Bon Jovi - Wanted Dead Or Alive.ogg,
-            volume = 1.0,
+            volume = 0.334,
         }
     }
     sound TRSF_CreamWhiteRoom
@@ -74,7 +74,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Cream - White Room.ogg,
-            volume = 1.0,
+            volume = 0.705,
         }
     }
     sound TRSF_CCRBadMoonRising
@@ -85,7 +85,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Creedence Clearwater Revival - Bad Moon Rising.ogg,
-            volume = 1.0,
+            volume = 0.579,
         }
     }
     sound TRSF_ForeignerColdAsIce
@@ -96,7 +96,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Foreigner - Cold as Ice.ogg,
-            volume = 1.0,
+            volume = 0.357,
         }
     }
     sound TRSF_ForeignerHotBlooded
@@ -107,7 +107,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Foreigner - Hot Blooded.ogg,
-            volume = 1.0,
+            volume = 0.309,
         }
     }
     sound TRSF_IronButterflyInAGaddaDaVida
@@ -118,7 +118,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Iron Butterfly - In A Gadda Da Vida.ogg,
-            volume = 1.0,
+            volume = 0.531,
         }
     }
     sound TRSF_KansasCarryOnWaywardSon
@@ -129,7 +129,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Kansas - Carry On Wayward Son.ogg,
-            volume = 1.0,
+            volume = 0.838,
         }
     }
     sound TRSF_MetallicaWhiplash
@@ -140,7 +140,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Metallica - Whiplash.ogg,
-            volume = 1.0,
+            volume = 0.386,
         }
     }
     sound TRSF_MotorheadAceOfSpades
@@ -151,7 +151,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Motorhead - Ace Of Spades.ogg,
-            volume = 1.0,
+            volume = 0.324,
         }
     }
     sound TRSF_MotleyCrueKickstartMyHeart
@@ -162,7 +162,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Motley Crue - Kickstart My Heart.ogg,
-            volume = 1.0,
+            volume = 0.330,
         }
     }
     sound TRSF_SurvivorEyeOfTheTiger
@@ -173,7 +173,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Survivor - Eye of the Tiger.ogg,
-            volume = 1.0,
+            volume = 0.766,
         }
     }
     sound TRSF_TheAnimalsHouseOfTheRisingSun
@@ -184,7 +184,7 @@ module Base
         clip
         {
             file = media/sound/Radio/The Animals - The House Of The Rising Sun.ogg,
-            volume = 1.0,
+            volume = 0.345,
         }
     }
     sound TRSF_RollingStonesSympathyForTheDevil
@@ -195,7 +195,7 @@ module Base
         clip
         {
             file = media/sound/Radio/The Rolling Stones - Sympathy For The Devil.ogg,
-            volume = 1.0,
+            volume = 0.511,
         }
     }
     sound TRSF_ThreeDogNightOne
@@ -206,7 +206,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Three Dog Night - One.ogg,
-            volume = 1.0,
+            volume = 0.435,
         }
     }
     sound TRSF_VanHalenPanama
@@ -217,7 +217,7 @@ module Base
         clip
         {
             file = media/sound/Radio/Van Halen - Panama.ogg,
-            volume = 1.0,
+            volume = 0.332,
         }
     }
     sound TRSF_Commercial

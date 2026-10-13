@@ -19,7 +19,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Whole Lotta Love.ogg,
-            volume = 1.0,
+            volume = 0.452,
         }
     }
     sound TRSF_Cassette_StairwayToHeaven
@@ -30,7 +30,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Stairway to Heaven.ogg,
-            volume = 1.0,
+            volume = 0.744,
         }
     }
     sound TRSF_Cassette_Kashmir
@@ -41,7 +41,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Kashmir.ogg,
-            volume = 1.0,
+            volume = 0.549,
         }
     }
     sound TRSF_Cassette_TheOcean
@@ -52,7 +52,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/The Ocean.ogg,
-            volume = 1.0,
+            volume = 0.513,
         }
     }
     sound TRSF_Cassette_RambleOn
@@ -63,7 +63,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Ramble On.ogg,
-            volume = 1.0,
+            volume = 0.749,
         }
     }
     sound TRSF_Cassette_DazedAndConfused
@@ -74,7 +74,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Dazed and Confused.ogg,
-            volume = 1.0,
+            volume = 0.589,
         }
     }
     sound TRSF_Cassette_ImmigrantSong
@@ -85,7 +85,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Immigrant Song.ogg,
-            volume = 1.0,
+            volume = 0.521,
         }
     }
     sound TRSF_Cassette_RockAndRoll
@@ -96,7 +96,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Rock and Roll.ogg,
-            volume = 1.0,
+            volume = 0.490,
         }
     }
     sound TRSF_Cassette_WhatIsAndWhatShouldNeverBe
@@ -107,7 +107,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/What Is and What Should Never Be.ogg,
-            volume = 1.0,
+            volume = 0.568,
         }
     }
     sound TRSF_Cassette_WhenTheLeveeBreaks
@@ -118,7 +118,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/When the Levee Breaks.ogg,
-            volume = 1.0,
+            volume = 0.476,
         }
     }
     sound TRSF_Cassette_GoodTimesBadTimes
@@ -129,7 +129,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Good Times Bad Times.ogg,
-            volume = 1.0,
+            volume = 0.524,
         }
     }
     sound TRSF_Cassette_BlackDog
@@ -140,7 +140,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Black Dog.ogg,
-            volume = 1.0,
+            volume = 0.557,
         }
     }
     sound TRSF_Cassette_GoingToCalifornia
@@ -151,7 +151,7 @@ module Base
         clip
         {
             file = media/sound/Cassette/Going to California.ogg,
-            volume = 1.0,
+            volume = 0.885,
         }
     }
 }
