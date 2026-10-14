@@ -13,9 +13,8 @@ To add your music:
 To change the playlist later, add or remove MP3/OGG files in this folder and
 run the BAT again. The generator uses the filenames as track titles and
 registers the files directly without making extra copies. If the folder has no
-MP3 or OGG files, the generator removes the custom playlist definitions, so
-100.2 MHz will not be registered.
+MP3 or OGG files, the generator completes normally, removes the custom playlist
+definitions and generated sound files, and leaves this folder ready for songs
+to be added later. 100.2 MHz will not be registered until songs are generated.
 
 The default 99.6 MHz playlist is not changed by this process.
-
-Only include music that you have permission to use and distribute. Definitely don't do this. ( ͡° ͜ʖ ͡°)

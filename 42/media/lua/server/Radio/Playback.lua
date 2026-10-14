@@ -1,5 +1,5 @@
 local MODULE = "TheRoadSoFarFM"
-local activeRadios = {}
+local activeStations = {}
 local lastNoiseEventAt = {}
 local NOISE_COMMAND_COOLDOWN_MS = 1000
 local worldSoundApiWarningReported = false
@@ -15,7 +15,7 @@ local function isFiniteNumber(value)
 end
 
 local function emitRadioNoise(args)
-    if zombieAttractionDisabled() or not activeRadios[args.key] then
+    if zombieAttractionDisabled() or not activeStations[args.frequency] then
         return
     end
 
@@ -59,9 +59,9 @@ local function playlistConfigForFrequency(frequency)
     return nil
 end
 
-local function sendPlayback(player, key, state, broadcast)
+local function sendPlayback(player, frequency, state, broadcast)
     local args = {
-        key = key,
+        frequency = frequency,
         sound = state.sound,
         kind = state.kind,
         version = state.version,
@@ -79,44 +79,51 @@ local function sendPlayback(player, key, state, broadcast)
 end
 
 local function onClientCommand(module, command, player, args)
-    if module ~= MODULE or not args or type(args.key) ~= "string" or #args.key > 128 then
+    if command == "requestStart" then
+        print("[TheRoadSoFarFM][MP] Server received requestStart: module="
+            .. tostring(module) .. ", frequency="
+            .. tostring(type(args) == "table" and args.frequency or nil) .. ".")
+    end
+
+    if module ~= MODULE or type(args) ~= "table" then
         return
     end
 
-    local key = args.key
     if command == "requestStart" then
         local config = playlistConfigForFrequency(args.frequency)
         if not config then
+            print("[TheRoadSoFarFM][MP] Rejected station-state request for frequency "
+                .. tostring(args.frequency) .. ".")
             return
         end
 
-        local state = activeRadios[key]
+        local state = activeStations[args.frequency]
         if not state then
             state = TheRoadSoFarFMPlaylist.createState(config)
-            activeRadios[key] = state
-            sendPlayback(nil, key, state, true)
-        else
-            sendPlayback(player, key, state, false)
+            activeStations[args.frequency] = state
         end
+        print("[TheRoadSoFarFM][MP] Sending station state: "
+            .. state.sound .. " on " .. tostring(args.frequency) .. ".")
+        sendPlayback(player, args.frequency, state, false)
     elseif command == "requestAdvance" then
-        local state = activeRadios[key]
+        local state = activeStations[args.frequency]
         if state and type(args.version) == "number" and args.version == state.version then
             TheRoadSoFarFMPlaylist.advance(state)
-            sendPlayback(nil, key, state, true)
+            sendPlayback(nil, args.frequency, state, true)
         end
     elseif command == "debugCommercial" then
-        local state = activeRadios[key]
+        local state = activeStations[args.frequency]
         if state and type(args.version) == "number" and args.version == state.version then
             TheRoadSoFarFMPlaylist.forceCommercial(state)
-            sendPlayback(nil, key, state, true)
+            sendPlayback(nil, args.frequency, state, true)
         end
-    elseif command == "requestStop" and activeRadios[key] then
-        activeRadios[key] = nil
-        lastNoiseEventAt[key] = nil
-        sendServerCommand(MODULE, "stop", { key = key })
     elseif command == "radioNoise" then
-        emitRadioNoise(args)
+        if type(args.frequency) == "number" and args.frequency == 99600
+            and type(args.key) == "string" and #args.key <= 128 then
+            emitRadioNoise(args)
+        end
     end
 end
 
 Events.OnClientCommand.Add(onClientCommand)
+print("[TheRoadSoFarFM][MP] Server radio command handler loaded.")

@@ -7,6 +7,7 @@ local localPlaylists = {}
 local pendingStarts = {}
 local pendingStops = {}
 local approvedStarts = {}
+local approvedStations = {}
 local worldSoundCounters = {}
 local pendingInitialAnnouncement
 local initialAnnouncementDisplayed = false
@@ -15,13 +16,187 @@ local RADIO_GAIN_MULTIPLIER = 0.75
 local MODULE = "TheRoadSoFarFM"
 local ROAD_SO_FAR_FREQUENCY = 99600
 local USER_TRACKS_FREQUENCY = 100200
-local WELCOME_ANNOUNCEMENT_DELAY = 120
+local RADIO_DEVICE_HANDOFF_WINDOW_MS = 5000
+local STATION_START_RETRY_MS = 3000
+local INITIAL_ANNOUNCEMENT_DELAY = 300
 local missingUserTracksPlaylistReported = false
 local worldSoundApiWarningReported = false
 local deviceSoundRangeWarningReported = false
 local freeEmitterWarningReported = false
 local emitterPositionWarningReported = false
 local emitter3DWarningReported = false
+local soundWarmupQueue = {}
+local queuedSoundWarmups = {}
+local warmedSoundNames = {}
+local soundWarmupScheduled = false
+local soundWarmupSuccesses = 0
+local soundWarmupFailures = 0
+local SLOW_AUDIO_OPERATION_THRESHOLD_MS = 16
+
+local function logSlowAudioOperation(operation, soundName, startedAt)
+    local duration = getTimestampMs() - startedAt
+    if duration >= SLOW_AUDIO_OPERATION_THRESHOLD_MS then
+        print(string.format(
+            "[TheRoadSoFarFM][AudioPerf] %s for %s took %d ms.",
+            operation,
+            tostring(soundName),
+            duration
+        ))
+    end
+end
+
+local function warmSoundClip(soundName)
+    if not GameSounds or not GameSounds.getSound then
+        return false, "GameSounds API is unavailable."
+    end
+
+    local gameSound = GameSounds.getSound(soundName)
+    if not gameSound or not gameSound.getRandomClip then
+        return false, "sound event or clip API is unavailable."
+    end
+
+    local clip = gameSound:getRandomClip()
+    if not clip then
+        return false, "sound event has no clip."
+    end
+
+    local world = IsoWorld and IsoWorld.instance
+    if not world or not world.getFreeEmitter then
+        return false, "world free-emitter API is unavailable."
+    end
+
+    local emitter = world:getFreeEmitter()
+    if not emitter or not emitter.playClip or not emitter.setVolume or not emitter.stopSound then
+        return false, "sound emitter clip playback API is unavailable."
+    end
+
+    local soundHandle = emitter:playClip(clip, nil)
+    if not soundHandle or soundHandle == 0 then
+        return false, "playClip did not return a sound handle."
+    end
+
+    local volumeSet, volumeError = pcall(function()
+        emitter:setVolume(soundHandle, 0)
+    end)
+    local soundStopped, stopError = pcall(function()
+        emitter:stopSound(soundHandle)
+    end)
+    if not soundStopped then
+        return false, "could not stop warm-up clip: " .. tostring(stopError)
+    end
+    if not volumeSet then
+        return false, "could not mute warm-up clip: " .. tostring(volumeError)
+    end
+
+    return true
+end
+
+local function queueAllSoundWarmup()
+    if soundWarmupScheduled then
+        return
+    end
+    soundWarmupScheduled = true
+
+    local radioCount = 0
+    local userTracksCount = 0
+    local cassetteCount = 0
+    local function queueSound(soundName)
+        if type(soundName) ~= "string" or soundName == ""
+            or warmedSoundNames[soundName] or queuedSoundWarmups[soundName] then
+            return false
+        end
+        queuedSoundWarmups[soundName] = true
+        soundWarmupQueue[#soundWarmupQueue + 1] = soundName
+        return true
+    end
+
+    local radioConfig = TheRoadSoFarFMConfig
+    if radioConfig and type(radioConfig.Tracks) == "table" then
+        for _, soundName in ipairs(radioConfig.Tracks) do
+            if queueSound(soundName) then
+                radioCount = radioCount + 1
+            end
+        end
+        if queueSound(radioConfig.Commercial) then
+            radioCount = radioCount + 1
+        end
+        if queueSound(radioConfig.Rewind) then
+            radioCount = radioCount + 1
+        end
+    else
+        print("[TheRoadSoFarFM] Cannot warm radio clips: playlist configuration is unavailable.")
+    end
+
+    local isMultiplayerClient = isClient and isClient()
+    local userTracksConfig = TheRoadSoFarFMUserTracksConfig
+    if not isMultiplayerClient and userTracksConfig and type(userTracksConfig.Tracks) == "table" then
+        for _, soundName in ipairs(userTracksConfig.Tracks) do
+            if queueSound(soundName) then
+                userTracksCount = userTracksCount + 1
+            end
+        end
+    end
+
+    local cassettePlaylist = TheRoadSoFarFMCassette
+    if cassettePlaylist then
+        if queueSound(cassettePlaylist.InsertingSound) then
+            cassetteCount = cassetteCount + 1
+        end
+        for _, track in ipairs(cassettePlaylist.Tracks or {}) do
+            if type(track) == "table" and queueSound(track.Sound) then
+                cassetteCount = cassetteCount + 1
+            end
+        end
+    else
+        print("[TheRoadSoFarFM] Cannot warm cassette clips: playlist configuration is unavailable.")
+    end
+
+    print(string.format(
+        "[TheRoadSoFarFM] Queued pre-map clip warm-up: %d radio, %d User Tracks, %d cassette (%d total).",
+        radioCount,
+        userTracksCount,
+        cassetteCount,
+        #soundWarmupQueue
+    ))
+end
+
+local function warmNextSoundClip()
+    if #soundWarmupQueue == 0 then
+        return
+    end
+
+    local soundName = table.remove(soundWarmupQueue, 1)
+    queuedSoundWarmups[soundName] = nil
+    local startedAt = getTimestampMs()
+    local callSucceeded, warmed, errorMessage = pcall(warmSoundClip, soundName)
+    logSlowAudioOperation("playClip warmup", soundName, startedAt)
+
+    if not callSucceeded then
+        soundWarmupFailures = soundWarmupFailures + 1
+        print("[TheRoadSoFarFM] Unexpected error warming " .. soundName .. ": " .. tostring(warmed))
+    elseif not warmed then
+        soundWarmupFailures = soundWarmupFailures + 1
+        print("[TheRoadSoFarFM] Could not warm " .. soundName .. ": " .. tostring(errorMessage))
+    else
+        soundWarmupSuccesses = soundWarmupSuccesses + 1
+        warmedSoundNames[soundName] = true
+    end
+
+    if #soundWarmupQueue == 0 then
+        print(string.format(
+            "[TheRoadSoFarFM] Pre-map clip warm-up completed: %d succeeded, %d failed.",
+            soundWarmupSuccesses,
+            soundWarmupFailures
+        ))
+    end
+end
+
+local function warmAllSoundClipsBeforeMapLoad()
+    queueAllSoundWarmup()
+    while #soundWarmupQueue > 0 do
+        warmNextSoundClip()
+    end
+end
 
 local function getFreeEmitterAt(x, y, z, soundDescription)
     local world = getWorld and getWorld()
@@ -33,7 +208,9 @@ local function getFreeEmitterAt(x, y, z, soundDescription)
         return nil
     end
 
+    local startedAt = getTimestampMs()
     local emitter = world:getFreeEmitter(x, y, z)
+    logSlowAudioOperation("getFreeEmitter", soundDescription, startedAt)
     if not emitter then
         print("[TheRoadSoFarFM] Cannot play " .. soundDescription .. ": no free sound emitter is available.")
         return nil
@@ -46,7 +223,9 @@ local function getFreeEmitterAt(x, y, z, soundDescription)
         return nil
     end
 
+    startedAt = getTimestampMs()
     emitter:setPos(x, y, z)
+    logSlowAudioOperation("setPos", soundDescription, startedAt)
     return emitter
 end
 
@@ -59,7 +238,9 @@ local function setEmitter3D(emitter, soundHandle, is3D, soundDescription)
         return false
     end
 
+    local startedAt = getTimestampMs()
     emitter:set3D(soundHandle, is3D)
+    logSlowAudioOperation("set3D", soundDescription, startedAt)
     return true
 end
 
@@ -68,22 +249,29 @@ local function zombieAttractionDisabled()
         and SandboxVars.TheRoadSoFarFM.DisableZombieAttraction == true
 end
 
-local function announceTrackTitle(title, device, deviceData, player)
+local function announceTrackTitle(title, device, deviceData, player, isUserTracksTrack)
     if type(title) ~= "string" or title == "" then
         return
     end
 
+    local red, green, blue = 0.53, 0.81, 0.92
+    if isUserTracksTrack then
+        red, green, blue = 1, 0, 0
+    end
+
     if instanceof(device, "Radio") then
+        local startedAt = getTimestampMs()
         player:SayRadio(
             title,
-            0.53,
-            0.81,
-            0.92,
+            red,
+            green,
+            blue,
             UIFont.Medium,
             deviceData:getDeviceVolumeRange(),
             deviceData:getChannel(),
             "radio"
         )
+        logSlowAudioOperation("SayRadio", title, startedAt)
         return
     end
 
@@ -93,11 +281,13 @@ local function announceTrackTitle(title, device, deviceData, player)
     end
 
     local codes = ""
+    local startedAt = getTimestampMs()
     if instanceof(device, "VehiclePart") then
-        device:AddDeviceText(title, 0.53, 0.81, 0.92, nil, codes, -1)
+        device:AddDeviceText(title, red, green, blue, nil, codes, -1)
     else
-        device:AddDeviceText(player, title, 0.53, 0.81, 0.92, nil, codes, -1)
+        device:AddDeviceText(player, title, red, green, blue, nil, codes, -1)
     end
+    logSlowAudioOperation("AddDeviceText", title, startedAt)
 end
 
 local WELCOME_MESSAGE = "Welcome to The Road So Far FM. Enjoy the mod!"
@@ -240,9 +430,10 @@ local function isInventoryDevice(deviceData)
     return deviceData.isInventoryDevice and deviceData:isInventoryDevice()
 end
 
-local function devicePosition(device, player)
+local function devicePosition(device, player, inventoryDevice)
     local deviceData = device:getDeviceData()
-    if isInventoryDevice(deviceData) then
+    if inventoryDevice == true
+        or inventoryDevice == nil and isInventoryDevice(deviceData) then
         return player:getX(), player:getY(), player:getZ()
     end
 
@@ -273,7 +464,7 @@ local function devicePosition(device, player)
 end
 
 local function updateTrackEmitter(track, player)
-    local x, y, z = devicePosition(track.device, player)
+    local x, y, z = devicePosition(track.device, player, track.inventoryDevice)
     if track.emitterX ~= x or track.emitterY ~= y or track.emitterZ ~= z then
         track.emitter:setPos(x, y, z)
         track.emitterX = x
@@ -281,7 +472,7 @@ local function updateTrackEmitter(track, player)
         track.emitterZ = z
     end
 
-    local is3D = not isInventoryDevice(track.deviceData)
+    local is3D = not track.inventoryDevice
     if track.emitterIs3D ~= is3D then
         if not setEmitter3D(track.emitter, track.soundHandle, is3D, track.soundName) then
             return false
@@ -291,7 +482,7 @@ local function updateTrackEmitter(track, player)
     return true
 end
 
-local function updateZombieAttraction(player, key, device, deviceData)
+local function updateZombieAttraction(player, key, device, deviceData, inventoryDevice)
     if zombieAttractionDisabled() then
         worldSoundCounters[key] = nil
         return
@@ -303,7 +494,7 @@ local function updateZombieAttraction(player, key, device, deviceData)
         return
     end
 
-    if isInventoryDevice(deviceData) and deviceData:getHeadphoneType() >= 0 then
+    if inventoryDevice and deviceData:getHeadphoneType() >= 0 then
         worldSoundCounters[key] = nil
         return
     end
@@ -331,11 +522,12 @@ local function updateZombieAttraction(player, key, device, deviceData)
         end
     end
 
-    local x, y, z = devicePosition(device, player)
+    local x, y, z = devicePosition(device, player, inventoryDevice)
     x, y, z = math.floor(x), math.floor(y), math.floor(z)
-    if isClient() and not isInventoryDevice(deviceData) then
+    if isClient() and not inventoryDevice then
         sendClientCommand(player, MODULE, "radioNoise", {
             key = key,
+            frequency = deviceData:getChannel(),
             x = x,
             y = y,
             z = z,
@@ -352,11 +544,13 @@ local function updateZombieAttraction(player, key, device, deviceData)
             return
         end
 
-        local source = isInventoryDevice(deviceData) and player or device
+        local source = inventoryDevice and player or device
         if instanceof(device, "VehiclePart") then
             source = device:getVehicle()
         end
+        local startedAt = getTimestampMs()
         worldSoundManager:addSoundRepeating(source, x, y, z, range, volume, volume > 50)
+        logSlowAudioOperation("addSoundRepeating", "radio noise", startedAt)
     end
 
     local randomDelay = ZombRand and ZombRand(300) or math.random(0, 299)
@@ -368,14 +562,14 @@ local function updateTrackVolume(track, player)
         return
     end
 
-    local deviceX, deviceY, deviceZ = devicePosition(track.device, player)
+    local deviceX, deviceY, deviceZ = devicePosition(track.device, player, track.inventoryDevice)
     local dx = player:getX() - deviceX
     local dy = player:getY() - deviceY
     local dz = (player:getZ() - deviceZ) * 3
     local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
     local deviceVolume = track.deviceData:getDeviceVolume()
     local volume
-    if isInventoryDevice(track.deviceData) then
+    if track.inventoryDevice then
         volume = deviceVolume * RADIO_GAIN_MULTIPLIER
     else
         local range = track.deviceData:getBaseVolumeRange() * deviceVolume * RADIO_RANGE_MULTIPLIER
@@ -386,20 +580,37 @@ local function updateTrackVolume(track, player)
     end
 
     if track.volume ~= volume then
+        local startedAt = getTimestampMs()
         track.emitter:setVolume(track.soundHandle, volume)
+        logSlowAudioOperation("setVolume update", track.soundName, startedAt)
         track.volume = volume
     end
 end
 
-local function startTrack(key, device, deviceData, player, playback)
+local function logInventoryRadioAudioPath(track)
+    if not track.inventoryDevice or track.inventoryAudioPathLogged then
+        return
+    end
+
+    track.inventoryAudioPathLogged = true
+    print("[TheRoadSoFarFM] Using inventory radio audio path for "
+        .. track.soundName .. " at device volume "
+        .. tostring(track.deviceData:getDeviceVolume()) .. ".")
+end
+
+local function startTrack(key, device, deviceData, player, playback, inventoryDevice)
     local existing = activeTracks[key]
     if existing then
         if existing.version == playback.version and existing.soundName == playback.soundName then
             existing.device = device
             existing.deviceData = deviceData
+            existing.inventoryDevice = inventoryDevice
+            existing.missingSince = nil
             if existing.unavailable then
                 if not existing.emitter:isPlaying(existing.soundHandle) then
+                    local startedAt = getTimestampMs()
                     local soundHandle = existing.emitter:playSound(existing.soundName)
+                    logSlowAudioOperation("playSound resume", existing.soundName, startedAt)
                     if not soundHandle then
                         print("[TheRoadSoFarFM] Failed to resume sound " .. existing.soundName .. ".")
                         return nil
@@ -410,31 +621,41 @@ local function startTrack(key, device, deviceData, player, playback)
                 existing.unavailable = false
                 existing.volume = nil
             end
+            logInventoryRadioAudioPath(existing)
             return existing
         end
         stopTrack(key)
     end
 
-    local x, y, z = devicePosition(device, player)
+    local x, y, z = devicePosition(device, player, inventoryDevice)
     local emitter = getFreeEmitterAt(x, y, z, playback.soundName)
     if not emitter then
         return nil
     end
 
+    local startedAt = getTimestampMs()
     local soundHandle = emitter:playSound(playback.soundName)
+    logSlowAudioOperation("playSound start", playback.soundName, startedAt)
     if not soundHandle then
         print("[TheRoadSoFarFM] Failed to start sound " .. playback.soundName .. ".")
         return nil
     end
-    local is3D = not isInventoryDevice(deviceData)
+    local is3D = not inventoryDevice
     if not setEmitter3D(emitter, soundHandle, is3D, playback.soundName) then
         emitter:stopSound(soundHandle)
         return nil
+    end
+    if isClient() then
+        print("[TheRoadSoFarFM][MP] Started local playback for "
+            .. playback.soundName .. " on "
+            .. string.format("%.1f MHz", deviceData:getChannel() / 1000)
+            .. " (" .. (inventoryDevice and "inventory" or "world") .. ").")
     end
 
     local track = {
         device = device,
         deviceData = deviceData,
+        inventoryDevice = inventoryDevice,
         channel = deviceData:getChannel(),
         deviceIdentity = radioKey(device),
         emitter = emitter,
@@ -451,9 +672,7 @@ local function startTrack(key, device, deviceData, player, playback)
         emitterZ = z,
     }
     activeTracks[key] = track
-    if isInventoryDevice(deviceData) then
-        print("[TheRoadSoFarFM] Started inventory radio track " .. playback.soundName .. ".")
-    end
+    logInventoryRadioAudioPath(track)
     local announcement
     if playback.welcome then
         announcement = WELCOME_MESSAGE
@@ -467,15 +686,19 @@ local function startTrack(key, device, deviceData, player, playback)
     end
 
     if announcement then
+        local isUserTracksTrack = not playback.welcome
+            and playback.kind == "song"
+            and deviceData:getChannel() == USER_TRACKS_FREQUENCY
         if initialAnnouncementDisplayed then
-            announceTrackTitle(announcement, device, deviceData, player)
+            announceTrackTitle(announcement, device, deviceData, player, isUserTracksTrack)
         else
             pendingInitialAnnouncement = {
                 title = announcement,
                 player = player,
                 device = device,
                 deviceData = deviceData,
-                ticksRemaining = WELCOME_ANNOUNCEMENT_DELAY,
+                ticksRemaining = INITIAL_ANNOUNCEMENT_DELAY,
+                isUserTracksTrack = isUserTracksTrack,
             }
         end
     end
@@ -492,50 +715,90 @@ local function setApprovedPlayback(key, soundName, version, kind, title, welcome
     }
 end
 
+local function setApprovedStation(frequency, soundName, version, kind, title, welcome)
+    approvedStations[frequency] = {
+        soundName = soundName,
+        version = version,
+        kind = kind,
+        title = title,
+        welcome = welcome == true,
+    }
+end
+
 local function onServerCommand(module, command, args)
-    if module ~= MODULE or not args or type(args.key) ~= "string" then
+    if module ~= MODULE or type(args) ~= "table" then
         return
     end
 
-    local key = args.key
     if command == "play" and type(args.sound) == "string" and type(args.version) == "number" then
-        pendingStarts[key] = nil
-        pendingStops[key] = nil
-        setApprovedPlayback(key, args.sound, args.version, args.kind, args.title, args.welcome)
-        stopTrack(key)
-    elseif command == "stop" then
-        pendingStarts[key] = nil
-        pendingStops[key] = nil
-        approvedStarts[key] = nil
-        localPlaylists[key] = nil
-        stopTrack(key)
+        if isClient() and type(args.frequency) == "number" then
+            print("[TheRoadSoFarFM][MP] Received station state: "
+                .. args.sound .. " on " .. tostring(args.frequency) .. ".")
+            local current = approvedStations[args.frequency]
+            pendingStarts[args.frequency] = nil
+            pendingStops[args.frequency] = nil
+            setApprovedStation(
+                args.frequency,
+                args.sound,
+                args.version,
+                args.kind,
+                args.title,
+                args.welcome
+            )
+            if not current or current.version ~= args.version then
+                local keysToStop = {}
+                for key, track in pairs(activeTracks) do
+                    if track.channel == args.frequency then
+                        keysToStop[#keysToStop + 1] = key
+                    end
+                end
+                for _, key in ipairs(keysToStop) do
+                    stopTrack(key)
+                end
+            end
+        elseif type(args.key) == "string" then
+            pendingStarts[args.key] = nil
+            pendingStops[args.key] = nil
+            setApprovedPlayback(
+                args.key,
+                args.sound,
+                args.version,
+                args.kind,
+                args.title,
+                args.welcome
+            )
+            stopTrack(args.key)
+        end
+    elseif command == "stop" and type(args.key) == "string" then
+        pendingStarts[args.key] = nil
+        pendingStops[args.key] = nil
+        approvedStarts[args.key] = nil
+        localPlaylists[args.key] = nil
+        stopTrack(args.key)
     end
-end
-
-local function radioCoordinates(device, player)
-    local x, y = devicePosition(device, player)
-    return math.floor(x), math.floor(y)
 end
 
 local function requestStart(player, key, device, deviceData, playlistConfig)
-    if approvedStarts[key] then
+    if isClient() then
+        local frequency = deviceData:getChannel()
+        if frequency == USER_TRACKS_FREQUENCY or approvedStations[frequency] then
+            return
+        end
+        local now = getTimestampMs()
+        local lastRequestAt = pendingStarts[frequency]
+        if not lastRequestAt or now - lastRequestAt >= STATION_START_RETRY_MS then
+            pendingStarts[frequency] = now
+            print("[TheRoadSoFarFM][MP] Requesting station state for "
+                .. tostring(frequency) .. ".")
+            sendClientCommand(player, MODULE, "requestStart", {
+                frequency = frequency,
+            })
+        end
         return
     end
 
-    if isClient() then
-        if deviceData:getChannel() == USER_TRACKS_FREQUENCY then
-            return
-        end
-        if not pendingStarts[key] then
-            pendingStarts[key] = true
-            local x, y = radioCoordinates(device, player)
-            sendClientCommand(player, MODULE, "requestStart", {
-                key = key,
-                frequency = deviceData:getChannel(),
-                x = x,
-                y = y,
-            })
-        end
+    if approvedStarts[key] then
+        return
     else
         local state = localPlaylists[key]
         if not state then
@@ -555,12 +818,9 @@ local function requestAdvance(key, track)
     track.advanceRequested = true
 
     if isClient() then
-        local x, y = radioCoordinates(track.device, getPlayer())
         sendClientCommand(getPlayer(), MODULE, "requestAdvance", {
-            key = key,
+            frequency = track.channel,
             version = track.version,
-            x = x,
-            y = y,
         })
         return
     end
@@ -613,7 +873,7 @@ function TheRoadSoFarFMTestAudio.forceCommercial()
             track.advanceRequested = true
             if isClient() then
                 sendClientCommand(getPlayer(), MODULE, "debugCommercial", {
-                    key = key,
+                    frequency = track.channel,
                     version = track.version,
                 })
             else
@@ -630,16 +890,99 @@ function TheRoadSoFarFMTestAudio.forceCommercial()
     print("[TheRoadSoFarFM] Debug commercial requested for " .. #keys .. " active station(s).")
 end
 
-local function requestStop(key)
-    local hadPlaybackState = approvedStarts[key] ~= nil or pendingStarts[key] ~= nil
+local function requestStop(key, player)
+    if isClient() then
+        pendingStops[key] = nil
+        stopTrack(key)
+        return
+    end
+
     approvedStarts[key] = nil
     pendingStarts[key] = nil
     localPlaylists[key] = nil
     stopTrack(key)
-    if isClient() and hadPlaybackState and not pendingStops[key] then
-        pendingStops[key] = true
-        sendClientCommand(getPlayer(), MODULE, "requestStop", { key = key })
+end
+
+local function stopLocalTracksForDevice(device, deviceData)
+    if not device or not deviceData then
+        return
     end
+
+    local identity = radioKey(device)
+    local portableId = portableRadioID(device)
+    local channel = deviceData:getChannel()
+    local keysToStop = {}
+    for key, track in pairs(activeTracks) do
+        local sameDeviceData = track.deviceData == deviceData
+        local sameIdentity = identity and track.deviceIdentity == identity
+        local trackPortableId = track.device and portableRadioID(track.device)
+        local samePortableId = portableId and trackPortableId == portableId
+        if track.channel == channel and (sameDeviceData or sameIdentity or samePortableId) then
+            keysToStop[#keysToStop + 1] = key
+        end
+    end
+
+    for _, key in ipairs(keysToStop) do
+        local track = activeTracks[key]
+        if track then
+            print("[TheRoadSoFarFM][MP] Stopping local emitter after radio shutdown: "
+                .. track.soundName .. " (" .. key .. ").")
+            stopTrack(key)
+            worldSoundCounters[key] = nil
+        end
+    end
+end
+
+local function stopRadioTracksAfterDeath(player)
+    local localPlayer = getPlayer()
+    if localPlayer and player ~= localPlayer then
+        return
+    end
+
+    local keysToStop = {}
+    for key, track in pairs(activeTracks) do
+        keysToStop[#keysToStop + 1] = key
+    end
+
+    for _, key in ipairs(keysToStop) do
+        local track = activeTracks[key]
+        if track and track.inventoryDevice then
+            if isClient() then
+                pendingStarts[track.channel] = nil
+                stopTrack(key)
+            else
+                requestStop(key, player)
+            end
+            print("[TheRoadSoFarFM] Stopped inventory radio track after player death: "
+                .. track.soundName .. ".")
+        elseif track then
+            stopTrack(key)
+            if isClient() then
+                pendingStarts[track.channel] = nil
+            else
+                pendingStarts[key] = nil
+            end
+            print("[TheRoadSoFarFM] Stopped local radio playback after player death: "
+                .. track.soundName .. ".")
+        end
+        worldSoundCounters[key] = nil
+    end
+
+    pendingInitialAnnouncement = nil
+end
+
+require "RadioCom/ISRadioAction"
+
+if not ISRadioAction.TheRoadSoFarFMRadioShutdownHooked then
+    local originalToggleOnOff = ISRadioAction.performToggleOnOff
+    ISRadioAction.performToggleOnOff = function(action)
+        originalToggleOnOff(action)
+        local deviceData = action.deviceData
+        if isClient() and deviceData and not deviceData:getIsTurnedOn() then
+            stopLocalTracksForDevice(action.device, deviceData)
+        end
+    end
+    ISRadioAction.TheRoadSoFarFMRadioShutdownHooked = true
 end
 
 local function stopOtherChannelTracks(deviceData, device, deviceIdentity, channel)
@@ -665,6 +1008,11 @@ local function updateRadioTracks(player)
         return
     end
 
+    if player:isDead() then
+        stopRadioTracksAfterDeath(player)
+        return
+    end
+
     if pendingInitialAnnouncement and pendingInitialAnnouncement.player == player then
         pendingInitialAnnouncement.ticksRemaining = pendingInitialAnnouncement.ticksRemaining - 1
         if pendingInitialAnnouncement.ticksRemaining <= 0 then
@@ -674,10 +1022,11 @@ local function updateRadioTracks(player)
                 announcement.title,
                 announcement.device,
                 announcement.deviceData,
-                player
+                player,
+                announcement.isUserTracksTrack
             )
             initialAnnouncementDisplayed = true
-            print("[TheRoadSoFarFM] Displayed initial radio announcement: " .. announcement.title)
+            print("[TheRoadSoFarFM] Issued initial radio announcement: " .. announcement.title)
         end
     end
 
@@ -688,6 +1037,47 @@ local function updateRadioTracks(player)
 
     local currentDevices = {}
     local processedDevices = {}
+    local inventoryDevices = {}
+    local inventoryRadioIds = {}
+    local function markInventoryDevice(device)
+        if not device then
+            return
+        end
+
+        inventoryDevices[device] = true
+        if instanceof(device, "Radio") then
+            local radioId = portableRadioID(device)
+            if radioId then
+                inventoryRadioIds[tostring(radioId)] = true
+            end
+        end
+        if device.getDeviceData then
+            local deviceData = device:getDeviceData()
+            if deviceData then
+                inventoryDevices[deviceData] = true
+            end
+        end
+    end
+    local function markInventoryDevices(container)
+        if not container then
+            return
+        end
+
+        local items = container:getItems()
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if instanceof(item, "Radio") then
+                markInventoryDevice(item)
+            elseif item.getInventory then
+                markInventoryDevices(item:getInventory())
+            end
+        end
+    end
+    markInventoryDevices(player:getInventory())
+    markInventoryDevice(player:getPrimaryHandItem())
+    markInventoryDevice(player:getSecondaryHandItem())
+    markInventoryDevice(player:getClothingItem_Back())
+
     local function processDevice(device)
         if not device or not device.getDeviceData or processedDevices[device] then
             return
@@ -701,7 +1091,16 @@ local function updateRadioTracks(player)
                 local channel = deviceData:getChannel()
                 stopOtherChannelTracks(deviceData, device, deviceIdentity, channel)
                 local key = playbackKey(deviceData, deviceIdentity, channel, currentDevices)
-                local inventoryDevice = isInventoryDevice(deviceData)
+                local radioId = portableRadioID(device)
+                local inPlayerInventory = inventoryDevices[device]
+                    or inventoryDevices[deviceData]
+                    or (radioId and inventoryRadioIds[tostring(radioId)])
+                local inventoryDevice
+                if isClient() then
+                    inventoryDevice = inPlayerInventory == true
+                else
+                    inventoryDevice = isInventoryDevice(deviceData) == true
+                end
                 local isPlayingStation = deviceData:getIsTurnedOn()
                     and (channel == ROAD_SO_FAR_FREQUENCY or channel == USER_TRACKS_FREQUENCY)
                 local playlistConfig = getPlaylistConfig(channel)
@@ -711,10 +1110,22 @@ local function updateRadioTracks(player)
                 if isPlayingStation then
                     currentDevices[key] = true
                     requestStart(player, key, device, deviceData, playlistConfig)
-                    updateZombieAttraction(player, key, device, deviceData)
-                    local playback = approvedStarts[key]
+                    updateZombieAttraction(player, key, device, deviceData, inventoryDevice)
+                    local playback
+                    if isClient() then
+                        playback = approvedStations[channel]
+                    else
+                        playback = approvedStarts[key]
+                    end
                     if playback then
-                        local track = startTrack(key, device, deviceData, player, playback)
+                        local track = startTrack(
+                            key,
+                            device,
+                            deviceData,
+                            player,
+                            playback,
+                            inventoryDevice
+                        )
                         if track then
                             updateTrackVolume(track, player)
                             if not track.emitter:isPlaying(track.soundHandle) then
@@ -722,7 +1133,10 @@ local function updateRadioTracks(player)
                             end
                         end
                     end
-                elseif inventoryDevice and (activeTracks[key] or approvedStarts[key]) then
+                elseif inventoryDevice
+                    and (activeTracks[key] or approvedStarts[key]
+                        or (isClient() and approvedStations[channel]))
+                    and (not isClient() or deviceData:getIsTurnedOn()) then
                     local track = activeTracks[key]
                     if track then
                         track.unavailable = true
@@ -732,11 +1146,6 @@ local function updateRadioTracks(player)
                 end
             end
         end
-    end
-
-    local devices = radio:getDevices()
-    for i = 0, devices:size() - 1 do
-        processDevice(devices:get(i))
     end
 
     local function processInventory(container)
@@ -760,19 +1169,37 @@ local function updateRadioTracks(player)
     processDevice(player:getSecondaryHandItem())
     processDevice(player:getClothingItem_Back())
 
+    local devices = radio:getDevices()
+    for i = 0, devices:size() - 1 do
+        processDevice(devices:get(i))
+    end
+
     for key in pairs(worldSoundCounters) do
         if not currentDevices[key] then
             worldSoundCounters[key] = nil
         end
     end
 
-    for key in pairs(activeTracks) do
+    local unavailableTracks = {}
+    local now = getTimestampMs()
+    for key, track in pairs(activeTracks) do
         if not currentDevices[key] then
-            local track = activeTracks[key]
-            track.unavailable = true
+            if isClient() then
+                track.missingSince = track.missingSince or now
+                if now - track.missingSince >= RADIO_DEVICE_HANDOFF_WINDOW_MS then
+                    unavailableTracks[#unavailableTracks + 1] = key
+                end
+            else
+                track.unavailable = true
+            end
         end
+    end
+    for _, key in ipairs(unavailableTracks) do
+        stopTrack(key)
     end
 end
 
 Events.OnServerCommand.Add(onServerCommand)
 Events.OnPlayerUpdate.Add(updateRadioTracks)
+Events.OnPlayerDeath.Add(stopRadioTracksAfterDeath)
+Events.OnPreMapLoad.Add(warmAllSoundClipsBeforeMapLoad)

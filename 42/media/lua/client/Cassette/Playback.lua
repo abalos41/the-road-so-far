@@ -2,6 +2,9 @@ local CASSETTE_MEDIA_ID = "TheRoadSoFarFM_DeansTop13ZeppTraxx"
 local DEVICE_HANDOFF_WINDOW_MS = 5000
 local MODULE = "TheRoadSoFarFM"
 local activePlayers = {}
+local approvedCassetteStates = {}
+local pendingCassetteStarts = {}
+local unstableIdentityWarnings = {}
 local missingMediaStateSetterWarningReported = false
 local deviceSoundRangeWarningReported = false
 local worldSoundApiWarningReported = false
@@ -57,6 +60,67 @@ end
 
 local function isInventoryDevice(deviceData)
     return deviceData.isInventoryDevice and deviceData:isInventoryDevice()
+end
+
+local function cassetteNetworkId(device)
+    if not isClient() or not device then
+        return nil
+    end
+
+    if device.getID then
+        local id = device:getID()
+        if id ~= nil then
+            return "item:" .. tostring(id)
+        end
+    end
+
+    local modData = device.getModData and device:getModData()
+    if modData and modData.RadioItemID then
+        return "item:" .. tostring(modData.RadioItemID)
+    end
+
+    if instanceof(device, "VehiclePart") then
+        local vehicle = device:getVehicle()
+        if vehicle and vehicle.getMechanicalID then
+            return "vehicle:" .. tostring(vehicle:getMechanicalID())
+                .. ":" .. tostring(device:getId())
+        end
+    end
+
+    local square = device.getSquare and device:getSquare()
+    if square then
+        local objectIndex = device.getObjectIndex and device:getObjectIndex() or 0
+        return string.format(
+            "world:%d:%d:%d:%d",
+            square:getX(),
+            square:getY(),
+            square:getZ(),
+            objectIndex
+        )
+    end
+    return nil
+end
+
+local function requestCassetteState(player, networkId)
+    if not networkId or pendingCassetteStarts[networkId] then
+        return
+    end
+    pendingCassetteStarts[networkId] = true
+    sendClientCommand(player, MODULE, "cassetteRequestState", {
+        deviceId = networkId,
+    })
+end
+
+local function requestCassetteAdvance(state)
+    if state.waitingForServer or not state.cassetteServerId then
+        return
+    end
+    state.waitingForServer = true
+    sendClientCommand(state.player, MODULE, "cassetteAdvance", {
+        deviceId = state.cassetteServerId,
+        trackIndex = state.trackIndex,
+        version = state.cassetteServerVersion,
+    })
 end
 
 local function cassetteSoundSource(deviceData, state)
@@ -337,11 +401,15 @@ local function startCurrentSound(deviceData, state)
 end
 
 local function newPlaybackState(deviceData, player, device)
+    local networkId = cassetteNetworkId(device)
+    local sharedState = networkId and approvedCassetteStates[networkId]
     local state = {
-        trackIndex = 1,
-        stage = "inserting",
+        trackIndex = sharedState and sharedState.trackIndex or 1,
+        stage = sharedState and "tracks" or "inserting",
         device = device,
         player = player,
+        cassetteServerId = networkId,
+        cassetteServerVersion = sharedState and sharedState.version,
     }
     startCurrentSound(deviceData, state)
     return state
@@ -386,12 +454,9 @@ local function processDevice(device, player, seenDevices)
     seenDevices[deviceData] = true
     local mediaData = deviceData:getMediaData()
     local isOurCassette = mediaData and mediaData:getId() == CASSETTE_MEDIA_ID
-    local canStartPlayback = isOurCassette
-        and deviceData:getIsTurnedOn()
-        and deviceData:isPlayingMedia()
     local state = activePlayers[deviceData]
 
-    if isOurCassette and not state then
+    if isOurCassette and not state and not isClient() then
         state = takeTransferableState(deviceData, seenDevices, getTimestampMs())
         if state then
             activePlayers[deviceData] = state
@@ -416,8 +481,33 @@ local function processDevice(device, player, seenDevices)
         return
     end
 
+    local networkId = cassetteNetworkId(device)
+    if isClient() and not networkId then
+        if not unstableIdentityWarnings[deviceData] then
+            print("[TheRoadSoFarFM] Cannot synchronize cassette playback: device has no stable multiplayer identity.")
+            unstableIdentityWarnings[deviceData] = true
+        end
+        return
+    end
+
+    local sharedState = networkId and approvedCassetteStates[networkId]
+    if isClient() and not sharedState then
+        requestCassetteState(player, networkId)
+        return
+    end
+
+    local canStartPlayback = isClient()
+        and sharedState.playing == true
+        or not isClient() and deviceData:isPlayingMedia()
+    if isClient() and not sharedState.playing then
+        if state then
+            stopPlayback(deviceData, state)
+        end
+        return
+    end
+
     local inventoryDevice = isInventoryDevice(deviceData) == true
-    if state and not deviceData:isPlayingMedia() then
+    if state and not isClient() and not deviceData:isPlayingMedia() then
         restoreMediaPlayingState(deviceData)
     end
 
@@ -437,6 +527,18 @@ local function processDevice(device, player, seenDevices)
         end
         activePlayers[deviceData] = state
     end
+    if sharedState and state.cassetteServerVersion ~= sharedState.version then
+        if state.handle and state.emitter then
+            state.emitter:stopSound(state.handle)
+            state.handle = nil
+        end
+        state.trackIndex = sharedState.trackIndex
+        state.cassetteServerVersion = sharedState.version
+        state.waitingForServer = false
+        state.complete = false
+        state.failed = false
+        state.stage = "tracks"
+    end
     if state.complete and canStartPlayback then
         state = newPlaybackState(deviceData, player, device)
         if not state then
@@ -451,6 +553,9 @@ local function processDevice(device, player, seenDevices)
     end
 
     updateZombieAttraction(player, state, device, deviceData)
+    if state.waitingForServer then
+        return
+    end
 
     local tracks = TheRoadSoFarFMCassette.Tracks
     if state.trackIndex > #tracks then
@@ -472,6 +577,9 @@ local function processDevice(device, player, seenDevices)
         state.handle = nil
         if state.stage == "inserting" then
             state.stage = "tracks"
+        elseif state.cassetteServerId then
+            requestCassetteAdvance(state)
+            return
         else
             state.trackIndex = state.trackIndex + 1
         end
@@ -484,22 +592,70 @@ local function processDevice(device, player, seenDevices)
     playCurrentTrack(deviceData, state)
 end
 
+local function onServerCommand(module, command, args)
+    if module ~= MODULE or command ~= "cassetteState" or type(args) ~= "table"
+        or type(args.deviceId) ~= "string"
+        or type(args.trackIndex) ~= "number"
+        or type(args.version) ~= "number" then
+        return
+    end
+
+    local trackCount = #TheRoadSoFarFMCassette.Tracks
+    if args.trackIndex < 1 or args.trackIndex > trackCount
+        or args.trackIndex ~= math.floor(args.trackIndex)
+        or args.version < 1 or args.version ~= math.floor(args.version) then
+        return
+    end
+
+    local current = approvedCassetteStates[args.deviceId]
+    if current and args.version < current.version then
+        return
+    end
+    pendingCassetteStarts[args.deviceId] = nil
+    approvedCassetteStates[args.deviceId] = {
+        trackIndex = args.trackIndex,
+        version = args.version,
+        playing = args.playing == true,
+    }
+    if args.playing ~= true then
+        local devicesToStop = {}
+        for deviceData, state in pairs(activePlayers) do
+            if state.cassetteServerId == args.deviceId then
+                devicesToStop[#devicesToStop + 1] = deviceData
+            end
+        end
+        for _, deviceData in ipairs(devicesToStop) do
+            stopPlayback(deviceData, activePlayers[deviceData])
+            if deviceData:isPlayingMedia() then
+                deviceData:StopPlayMedia()
+            end
+            if deviceData.setIsPlayingMedia then
+                deviceData:setIsPlayingMedia(false)
+            end
+        end
+    end
+end
+
 function TheRoadSoFarFMCassette.skip()
     local skipped = 0
     for deviceData, state in pairs(activePlayers) do
         if not state.complete and not state.missingSince then
-            if state.handle then
-                state.emitter:stopSound(state.handle)
-                state.handle = nil
-            end
-
-            if state.stage == "inserting" then
-                state.stage = "tracks"
+            if state.cassetteServerId then
+                requestCassetteAdvance(state)
             else
-                state.trackIndex = state.trackIndex + 1
+                if state.handle then
+                    state.emitter:stopSound(state.handle)
+                    state.handle = nil
+                end
+
+                if state.stage == "inserting" then
+                    state.stage = "tracks"
+                else
+                    state.trackIndex = state.trackIndex + 1
+                end
+                state.failed = false
+                playCurrentTrack(deviceData, state)
             end
-            state.failed = false
-            playCurrentTrack(deviceData, state)
             skipped = skipped + 1
         end
     end
@@ -511,8 +667,15 @@ function TheRoadSoFarFMCassette.skip()
     print("[TheRoadSoFarFM] Debug skip requested for " .. skipped .. " cassette playback(s).")
 end
 
+local stopInventoryCassettePlaybackAfterDeath
+
 local function updateCassettePlayback(player)
     if player ~= getPlayer() then
+        return
+    end
+
+    if player:isDead() then
+        stopInventoryCassettePlaybackAfterDeath(player)
         return
     end
 
@@ -568,7 +731,31 @@ local function updateCassettePlayback(player)
     end
 end
 
+stopInventoryCassettePlaybackAfterDeath = function(player)
+    local localPlayer = getPlayer()
+    if localPlayer and player and player ~= localPlayer then
+        return
+    end
+
+    local playerToStop = player or localPlayer
+    local devicesToStop = {}
+    for deviceData, state in pairs(activePlayers) do
+        if isInventoryDevice(deviceData)
+            and (not playerToStop or state.player == playerToStop) then
+            devicesToStop[#devicesToStop + 1] = deviceData
+        end
+    end
+
+    for _, deviceData in ipairs(devicesToStop) do
+        if stopCassettePlayback(deviceData) then
+            print("[TheRoadSoFarFM] Stopped inventory cassette playback after player death.")
+        end
+    end
+end
+
 Events.OnPlayerUpdate.Add(updateCassettePlayback)
+Events.OnPlayerDeath.Add(stopInventoryCassettePlaybackAfterDeath)
+Events.OnServerCommand.Add(onServerCommand)
 
 require "RadioCom/ISRadioAction"
 
@@ -578,10 +765,33 @@ if not ISRadioAction.TheRoadSoFarFMCassetteHooked then
         local deviceData = action.deviceData
         local mediaData = deviceData and deviceData:getMediaData()
         if mediaData and mediaData:getId() == CASSETTE_MEDIA_ID then
-            if stopCassettePlayback(deviceData) then
+            local deviceId = cassetteNetworkId(action.device)
+            local sharedState = deviceId and approvedCassetteStates[deviceId]
+            local shouldStop = activePlayers[deviceData] ~= nil
+                or sharedState and sharedState.playing == true
+                or not sharedState and deviceData:isPlayingMedia()
+            if shouldStop then
+                if not stopCassettePlayback(deviceData) then
+                    if deviceData:isPlayingMedia() then
+                        deviceData:StopPlayMedia()
+                    end
+                    if deviceData.setIsPlayingMedia then
+                        deviceData:setIsPlayingMedia(false)
+                    end
+                end
+                if isClient() and deviceId then
+                    sendClientCommand(action.character or getPlayer(), MODULE, "cassetteStop", {
+                        deviceId = deviceId,
+                    })
+                end
                 return
-            else
-                originalTogglePlayMedia(action)
+            end
+
+            originalTogglePlayMedia(action)
+            if isClient() and deviceId then
+                sendClientCommand(action.character or getPlayer(), MODULE, "cassetteStart", {
+                    deviceId = deviceId,
+                })
             end
             return
         end
@@ -610,7 +820,13 @@ if not RWMMedia.TheRoadSoFarFMCassetteHooked then
             and deviceData:getIsTurnedOn()
             and deviceData:hasMedia()
             and canInteract then
+            local deviceId = cassetteNetworkId(panel.device)
             stopCassettePlayback(deviceData)
+            if isClient() and deviceId then
+                sendClientCommand(panel.player or getPlayer(), MODULE, "cassetteStop", {
+                    deviceId = deviceId,
+                })
+            end
             return
         end
 

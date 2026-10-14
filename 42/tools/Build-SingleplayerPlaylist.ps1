@@ -38,6 +38,17 @@ function ConvertTo-AsciiTitle {
     return [regex]::Replace($withoutDiacritics, '[^\x00-\x7F]', '')
 }
 
+function Remove-LegacyGeneratedSounds {
+    $legacyGeneratedSoundDirectory = Join-Path $mod42Directory "media\sound\Radio\SingleplayerPlaylist_Generated"
+    if (Test-Path -LiteralPath $legacyGeneratedSoundDirectory) {
+        Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -File -Filter 'TRSF_Custom_*' |
+            Remove-Item -Force
+        if (-not (Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -Force)) {
+            Remove-Item -LiteralPath $legacyGeneratedSoundDirectory
+        }
+    }
+}
+
 try {
     New-Item -ItemType Directory -Path $playlistDirectory -Force | Out-Null
 
@@ -50,19 +61,25 @@ try {
                 Remove-Item -LiteralPath $outputPath -Force
             }
         }
-        throw "No music files were found in '$playlistDirectory'. Add MP3 or OGG files and run the generator again."
+        Remove-LegacyGeneratedSounds
+        $luaOutputDirectoryIsEmpty = Test-Path -LiteralPath $luaOutputDirectory -PathType Container
+        if ($luaOutputDirectoryIsEmpty) {
+            $luaOutputDirectoryIsEmpty = -not (Get-ChildItem -LiteralPath $luaOutputDirectory -Force)
+        }
+        if ($luaOutputDirectoryIsEmpty) {
+            Remove-Item -LiteralPath $luaOutputDirectory
+        }
+
+        Write-Host ""
+        Write-Host "No MP3 or OGG files were found in '$playlistDirectory'."
+        Write-Host "Generated User Tracks files were cleared; 100.2 MHz will not be registered."
+        Write-Host "Add songs to the folder and run this BAT again when you are ready."
+        return
     }
 
     New-Item -ItemType Directory -Path (Split-Path -Parent $soundOutputPath) -Force | Out-Null
     New-Item -ItemType Directory -Path (Split-Path -Parent $luaOutputPath) -Force | Out-Null
-    $legacyGeneratedSoundDirectory = Join-Path $mod42Directory "media\sound\Radio\SingleplayerPlaylist_Generated"
-    if (Test-Path -LiteralPath $legacyGeneratedSoundDirectory) {
-        Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -File -Filter 'TRSF_Custom_*' |
-            Remove-Item -Force
-        if (-not (Get-ChildItem -LiteralPath $legacyGeneratedSoundDirectory -Force)) {
-            Remove-Item -LiteralPath $legacyGeneratedSoundDirectory
-        }
-    }
+    Remove-LegacyGeneratedSounds
 
     $soundDefinitions = [System.Collections.Generic.List[string]]::new()
     $trackIdentifiers = [System.Collections.Generic.List[string]]::new()
