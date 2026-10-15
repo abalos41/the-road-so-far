@@ -9,6 +9,13 @@ local pendingStops = {}
 local approvedStarts = {}
 local approvedStations = {}
 local worldSoundCounters = {}
+local TRACK_HOP_VOLUME_MARGIN = 0.05
+local TRACK_HOP_COOLDOWN_MS = 1000
+-- Waiting sounds are not started when less than this is left before the sync cue.
+local WAITING_MIN_FILLER_MS = 2500
+local stationClocks = {}
+local joinDecisions = {}
+local lastHeartbeatAt = {}
 local pendingInitialAnnouncement
 local initialAnnouncementDisplayed = false
 local RADIO_RANGE_MULTIPLIER = 3.5
@@ -138,6 +145,13 @@ local function queueAllSoundWarmup()
     end
 
     local cassettePlaylist = TheRoadSoFarFMCassette
+    if isMultiplayerClient and TheRoadSoFarFMSync then
+        for _, soundName in ipairs(TheRoadSoFarFMSync.allSoundNames()) do
+            if queueSound(soundName) then
+                radioCount = radioCount + 1
+            end
+        end
+    end
     if cassettePlaylist then
         if queueSound(cassettePlaylist.InsertingSound) then
             cassetteCount = cassetteCount + 1
@@ -196,6 +210,24 @@ local function warmAllSoundClipsBeforeMapLoad()
     while #soundWarmupQueue > 0 do
         warmNextSoundClip()
     end
+end
+
+-- Plays a sound on a free world emitter for this client only. In multiplayer the plain
+-- playSound() would also send it to every other nearby client (PlayWorldSound), where it
+-- could neither be stopped nor follow the device volume; playSoundImpl() is the local one
+-- the base game's own radios use. The (name, nil) form is ambiguous between the IsoObject and
+-- IsoGridSquare overloads and throws a NullPointerException, so the 3-argument one is used.
+local function playLocalSound(emitter, soundName)
+    if isClient() then
+        if emitter.playSoundImpl then
+            local handle = emitter:playSoundImpl(soundName, false, nil)
+            if handle and handle ~= 0 then
+                return handle
+            end
+        end
+        return nil
+    end
+    return emitter:playSound(soundName)
 end
 
 local function getFreeEmitterAt(x, y, z, soundDescription)
@@ -340,7 +372,7 @@ function TheRoadSoFarFMTestAudio.play()
         return
     end
     local playlistConfig = TheRoadSoFarFMConfig
-    testSound = testEmitter:playSound(playlistConfig.Tracks[1])
+    testSound = playLocalSound(testEmitter, playlistConfig.Tracks[1])
     if not testSound then
         print("[TheRoadSoFarFM] Failed to start the first playlist track.")
         testEmitter = nil
@@ -422,6 +454,9 @@ local function stopTrack(key)
     local track = activeTracks[key]
     if track then
         track.emitter:stopSound(track.soundHandle)
+        if track.cueHandle then
+            (track.cueEmitter or track.emitter):stopSound(track.cueHandle)
+        end
         activeTracks[key] = nil
     end
 end
@@ -525,15 +560,13 @@ local function updateZombieAttraction(player, key, device, deviceData, inventory
     local x, y, z = devicePosition(device, player, inventoryDevice)
     x, y, z = math.floor(x), math.floor(y), math.floor(z)
     if isClient() and not inventoryDevice then
-        sendClientCommand(player, MODULE, "radioNoise", {
-            key = key,
-            frequency = deviceData:getChannel(),
-            x = x,
-            y = y,
-            z = z,
-            radius = range,
-            volume = volume,
-        })
+        -- The server works out volume and range itself; it only needs to know which device.
+        local target = TheRoadSoFarFMNoise.target(device)
+        if not target then
+            return
+        end
+        target.kind = "radio"
+        sendClientCommand(player, MODULE, "deviceNoise", target)
     else
         local worldSoundManager = getWorldSoundManager and getWorldSoundManager()
         if not worldSoundManager or not worldSoundManager.addSoundRepeating then
@@ -557,26 +590,187 @@ local function updateZombieAttraction(player, key, device, deviceData, inventory
     worldSoundCounters[key] = 300 + randomDelay
 end
 
+local function computeTrackVolume(deviceData, device, player, inventoryDevice)
+    local deviceVolume = deviceData:getDeviceVolume()
+    local gain = RADIO_GAIN_MULTIPLIER * TheRoadSoFarFMVolume.scale()
+    if inventoryDevice then
+        return deviceVolume * gain
+    end
+
+    local deviceX, deviceY, deviceZ = devicePosition(device, player, inventoryDevice)
+    local dx = player:getX() - deviceX
+    local dy = player:getY() - deviceY
+    local dz = (player:getZ() - deviceZ) * 3
+    local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+    local range = deviceData:getBaseVolumeRange() * deviceVolume * RADIO_RANGE_MULTIPLIER
+    if range > 0 then
+        return deviceVolume * math.max(0, 1 - distance / range) * gain
+    end
+    return 0
+end
+
+-- Milliseconds until the server advances the station, or nil when the clock is unknown.
+local function stationRemainingMs(channel, version)
+    local clock = stationClocks[channel]
+    if not clock or clock.version ~= version or not clock.durationMs then
+        return nil
+    end
+    return clock.startedLocalMs + clock.durationMs + TheRoadSoFarFMSync.AdvanceMarginMs
+        - getTimestampMs()
+end
+
+-- Next waiting sound of the given kind ("tuning" or "edit"). Every sound of a kind plays
+-- once before any repeats, and sounds that finish before the sync cue are preferred.
+local waitingBags
+local function takeWaitingSound(kind, remaining)
+    local sync = TheRoadSoFarFMSync
+    if not waitingBags then
+        waitingBags = {
+            tuning = sync.newBag(sync.Sounds.radio.tunings),
+            edit = sync.newBag(sync.Sounds.radio.edits),
+        }
+    end
+
+    local available
+    if remaining then
+        local _, cueMs = sync.radioCue()
+        if cueMs then
+            available = remaining - (cueMs + sync.CueEarlyMs)
+        end
+    end
+    return sync.bagTake(waitingBags[kind], available)
+end
+
+local function otherWaitingKind(kind)
+    return kind == "tuning" and "edit" or "tuning"
+end
+
+local function startWaitingCue(track, cueSound, now)
+    -- Its own emitter: the one of the filler may already be back in the engine's pool.
+    local x, y, z = devicePosition(track.device, getPlayer(), track.inventoryDevice)
+    local emitter = getFreeEmitterAt(x, y, z, cueSound)
+    local handle = emitter and playLocalSound(emitter, cueSound)
+    if not handle then
+        track.cueSkipped = true
+        return
+    end
+    if not setEmitter3D(emitter, handle, not track.inventoryDevice, cueSound) then
+        emitter:stopSound(handle)
+        track.cueSkipped = true
+        return
+    end
+    track.cueEmitter = emitter
+    track.cueHandle = handle
+    track.cueStartedAt = now
+    track.cueX, track.cueY, track.cueZ = x, y, z
+    print("[TheRoadSoFarFM][MP][Sync] Sync cue " .. cueSound .. " started on "
+        .. tostring(track.channel) .. ".")
+end
+
+-- A free emitter only stays active while it has sounds: when the last one ends the engine
+-- takes it back and stops processing it. Every waiting sound therefore gets a fresh emitter.
+local function startNextWaitingSound(track, remaining, now)
+    local kind = track.nextWaitingKind or "tuning"
+    local soundName = takeWaitingSound(kind, remaining)
+    local x, y, z = devicePosition(track.device, getPlayer(), track.inventoryDevice)
+    local emitter = soundName and getFreeEmitterAt(x, y, z, soundName)
+    local handle = emitter and playLocalSound(emitter, soundName)
+    if not handle then
+        track.nextWaitingAt = now + 2000
+        return
+    end
+    local is3D = not track.inventoryDevice
+    if not setEmitter3D(emitter, handle, is3D, soundName) then
+        emitter:stopSound(handle)
+        track.nextWaitingAt = now + 2000
+        return
+    end
+    track.emitter = emitter
+    track.emitterX, track.emitterY, track.emitterZ = x, y, z
+    track.emitterIs3D = is3D
+    track.soundHandle = handle
+    track.fillerSound = soundName
+    track.nextWaitingKind = otherWaitingKind(kind)
+    track.fillerVolume = nil
+    track.fillerStopped = false
+    print("[TheRoadSoFarFM][MP][Sync] Waiting sound " .. soundName .. " (" .. kind .. ") on "
+        .. tostring(track.channel) .. ", remaining="
+        .. tostring(remaining and math.floor(remaining) or "?") .. " ms.")
+end
+
+-- Late joiners hear tuning sounds and edits alternately; the shortest tuning sound is the
+-- sync cue, timed to end exactly as the next track begins.
+local function updateWaitingAudio(track, volume)
+    local sync = TheRoadSoFarFMSync
+    local now = getTimestampMs()
+    local remaining = stationRemainingMs(track.channel, track.version)
+
+    if not track.cueHandle and not track.cueSkipped and remaining then
+        local cueSound, cueMs = sync.radioCue()
+        if cueSound and remaining <= cueMs + sync.CueEarlyMs then
+            if remaining >= sync.CueMinRemainingMs then
+                startWaitingCue(track, cueSound, now)
+            else
+                track.cueSkipped = true
+            end
+        end
+    end
+
+    -- A filler that the sync cue would cut within moments is not started at all.
+    local fillerFits = true
+    if remaining and not track.cueStartedAt then
+        local _, cueMs = sync.radioCue()
+        if cueMs and remaining - (cueMs + sync.CueEarlyMs) < WAITING_MIN_FILLER_MS then
+            fillerFits = false
+        end
+    end
+
+    if not track.cueStartedAt and not track.cueSkipped and fillerFits
+        and not track.emitter:isPlaying(track.soundHandle)
+        and (not track.nextWaitingAt or now >= track.nextWaitingAt) then
+        startNextWaitingSound(track, remaining, now)
+    end
+
+    local fillerFactor = 1
+    if track.cueStartedAt then
+        fillerFactor = math.max(0, 1 - (now - track.cueStartedAt) / sync.FillerFadeMs)
+    end
+    local fillerVolume = volume * sync.FillerGain * fillerFactor
+    if track.fillerVolume ~= fillerVolume then
+        if fillerFactor <= 0 then
+            if not track.fillerStopped then
+                track.emitter:stopSound(track.soundHandle)
+                track.fillerStopped = true
+            end
+        else
+            track.emitter:setVolume(track.soundHandle, fillerVolume)
+        end
+        track.fillerVolume = fillerVolume
+    end
+    if track.cueHandle then
+        local cueEmitter = track.cueEmitter or track.emitter
+        local x, y, z = devicePosition(track.device, getPlayer(), track.inventoryDevice)
+        if track.cueX ~= x or track.cueY ~= y or track.cueZ ~= z then
+            cueEmitter:setPos(x, y, z)
+            track.cueX, track.cueY, track.cueZ = x, y, z
+        end
+        if track.cueVolume ~= volume then
+            cueEmitter:setVolume(track.cueHandle, volume * sync.CueGain)
+            track.cueVolume = volume
+        end
+    end
+    track.volume = volume
+end
+
 local function updateTrackVolume(track, player)
     if not updateTrackEmitter(track, player) then
         return
     end
 
-    local deviceX, deviceY, deviceZ = devicePosition(track.device, player, track.inventoryDevice)
-    local dx = player:getX() - deviceX
-    local dy = player:getY() - deviceY
-    local dz = (player:getZ() - deviceZ) * 3
-    local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
-    local deviceVolume = track.deviceData:getDeviceVolume()
-    local volume
-    if track.inventoryDevice then
-        volume = deviceVolume * RADIO_GAIN_MULTIPLIER
-    else
-        local range = track.deviceData:getBaseVolumeRange() * deviceVolume * RADIO_RANGE_MULTIPLIER
-        volume = 0
-        if range > 0 then
-            volume = deviceVolume * math.max(0, 1 - distance / range) * RADIO_GAIN_MULTIPLIER
-        end
+    local volume = computeTrackVolume(track.deviceData, track.device, player, track.inventoryDevice)
+    if track.waiting then
+        updateWaitingAudio(track, volume)
+        return
     end
 
     if track.volume ~= volume then
@@ -598,7 +792,8 @@ local function logInventoryRadioAudioPath(track)
         .. tostring(track.deviceData:getDeviceVolume()) .. ".")
 end
 
-local function startTrack(key, device, deviceData, player, playback, inventoryDevice)
+local function startTrack(key, device, deviceData, player, playback, inventoryDevice, joinMode)
+    local waiting = joinMode == "wait"
     local existing = activeTracks[key]
     if existing then
         if existing.version == playback.version and existing.soundName == playback.soundName then
@@ -607,9 +802,10 @@ local function startTrack(key, device, deviceData, player, playback, inventoryDe
             existing.inventoryDevice = inventoryDevice
             existing.missingSince = nil
             if existing.unavailable then
-                if not existing.emitter:isPlaying(existing.soundHandle) then
+                -- A waiting track chains its own sounds, so only real tracks are resumed here.
+                if not existing.waiting and not existing.emitter:isPlaying(existing.soundHandle) then
                     local startedAt = getTimestampMs()
-                    local soundHandle = existing.emitter:playSound(existing.soundName)
+                    local soundHandle = playLocalSound(existing.emitter, existing.soundName)
                     logSlowAudioOperation("playSound resume", existing.soundName, startedAt)
                     if not soundHandle then
                         print("[TheRoadSoFarFM] Failed to resume sound " .. existing.soundName .. ".")
@@ -620,6 +816,7 @@ local function startTrack(key, device, deviceData, player, playback, inventoryDe
                 end
                 existing.unavailable = false
                 existing.volume = nil
+                existing.fillerVolume = nil
             end
             logInventoryRadioAudioPath(existing)
             return existing
@@ -628,28 +825,36 @@ local function startTrack(key, device, deviceData, player, playback, inventoryDe
     end
 
     local x, y, z = devicePosition(device, player, inventoryDevice)
-    local emitter = getFreeEmitterAt(x, y, z, playback.soundName)
+    local soundToPlay = playback.soundName
+    if waiting then
+        soundToPlay = takeWaitingSound("tuning", stationRemainingMs(deviceData:getChannel(), playback.version))
+        if not soundToPlay then
+            return nil
+        end
+    end
+    local emitter = getFreeEmitterAt(x, y, z, soundToPlay)
     if not emitter then
         return nil
     end
 
     local startedAt = getTimestampMs()
-    local soundHandle = emitter:playSound(playback.soundName)
-    logSlowAudioOperation("playSound start", playback.soundName, startedAt)
+    local soundHandle = playLocalSound(emitter, soundToPlay)
+    logSlowAudioOperation("playSound start", soundToPlay, startedAt)
     if not soundHandle then
-        print("[TheRoadSoFarFM] Failed to start sound " .. playback.soundName .. ".")
+        print("[TheRoadSoFarFM] Failed to start sound " .. soundToPlay .. ".")
         return nil
     end
     local is3D = not inventoryDevice
-    if not setEmitter3D(emitter, soundHandle, is3D, playback.soundName) then
+    if not setEmitter3D(emitter, soundHandle, is3D, soundToPlay) then
         emitter:stopSound(soundHandle)
         return nil
     end
     if isClient() then
         print("[TheRoadSoFarFM][MP] Started local playback for "
-            .. playback.soundName .. " on "
+            .. soundToPlay .. " on "
             .. string.format("%.1f MHz", deviceData:getChannel() / 1000)
-            .. " (" .. (inventoryDevice and "inventory" or "world") .. ").")
+            .. " (" .. (inventoryDevice and "inventory" or "world") .. ")"
+            .. (joinMode and (", join=" .. joinMode) or "") .. ".")
     end
 
     local track = {
@@ -670,9 +875,19 @@ local function startTrack(key, device, deviceData, player, playback, inventoryDe
         emitterX = x,
         emitterY = y,
         emitterZ = z,
+        waiting = waiting,
+        fillerSound = waiting and soundToPlay or nil,
+        nextWaitingKind = waiting and "edit" or nil,
+        joinMode = joinMode,
     }
     activeTracks[key] = track
+    if isClient() and joinMode and joinMode ~= "start" then
+        joinDecisions[track.channel] = { version = playback.version, mode = joinMode }
+    end
     logInventoryRadioAudioPath(track)
+    if waiting then
+        return track
+    end
     local announcement
     if playback.welcome then
         announcement = WELCOME_MESSAGE
@@ -745,6 +960,24 @@ local function onServerCommand(module, command, args)
                 args.title,
                 args.welcome
             )
+            local sync = TheRoadSoFarFMSync
+            if sync.isValidMs(args.elapsedMs) and sync.isValidMs(args.durationMs)
+                and args.durationMs > 0 then
+                stationClocks[args.frequency] = {
+                    version = args.version,
+                    startedLocalMs = getTimestampMs() - args.elapsedMs,
+                    durationMs = args.durationMs,
+                }
+            else
+                stationClocks[args.frequency] = nil
+            end
+            local decision = joinDecisions[args.frequency]
+            if decision and decision.version ~= args.version then
+                joinDecisions[args.frequency] = nil
+            end
+            if args.reply == true and (args.join == "offset" or args.join == "wait") then
+                joinDecisions[args.frequency] = { version = args.version, mode = args.join }
+            end
             if not current or current.version ~= args.version then
                 local keysToStop = {}
                 for key, track in pairs(activeTracks) do
@@ -778,10 +1011,101 @@ local function onServerCommand(module, command, args)
     end
 end
 
+-- Multiplayer: how a new local track should join the station. Returns nil while the server
+-- still has to decide (late joiner, no decision cached for the current track yet).
+local function joinModeFor(frequency, station)
+    local decision = joinDecisions[frequency]
+    if decision and decision.version == station.version then
+        return decision.mode
+    end
+
+    local clock = stationClocks[frequency]
+    if not clock or clock.version ~= station.version then
+        return "start"
+    end
+    if getTimestampMs() - clock.startedLocalMs <= TheRoadSoFarFMSync.StartThresholdMs then
+        return "start"
+    end
+    return nil
+end
+
+-- Multiplayer: a muted track may only start when the current station track began moments
+-- ago (known clock); starting later would leave it out of step with everyone else.
+local function canStartSilently(frequency)
+    local station = approvedStations[frequency]
+    local clock = stationClocks[frequency]
+    return station ~= nil and clock ~= nil and clock.version == station.version
+        and getTimestampMs() - clock.startedLocalMs <= TheRoadSoFarFMSync.StartThresholdMs
+end
+
+-- Multiplayer: a client hears a station through a single source (one track), whatever the
+-- number of radios tuned to it. The track follows the player to whichever radio sounds
+-- louder, and when the radio that carries it is switched off the track passes to another
+-- radio of the station instead of stopping and asking the server again.
+local function channelTrackKey(channel)
+    for key, track in pairs(activeTracks) do
+        if track.channel == channel then
+            return key
+        end
+    end
+    return nil
+end
+
+-- True when the radio carrying the track can no longer play it: it was switched off, tuned
+-- elsewhere or is not around any more. Any other radio of the station may then take it over.
+local function trackOwnerInvalid(track)
+    if track.ownerInvalid or track.missingSince then
+        return true
+    end
+    local deviceData = track.deviceData
+    return deviceData ~= nil
+        and (not deviceData:getIsTurnedOn() or deviceData:getChannel() ~= track.channel)
+end
+
+local function canTakeOver(donorKey, newVolume)
+    local track = activeTracks[donorKey]
+    if trackOwnerInvalid(track) then
+        return true
+    end
+
+    local now = getTimestampMs()
+    if track.lastHopAt and now - track.lastHopAt < TRACK_HOP_COOLDOWN_MS then
+        return false
+    end
+    return (track.volume or 0) + TRACK_HOP_VOLUME_MARGIN < newVolume
+end
+
+local function adoptTrack(donorKey, key, device, deviceData, inventoryDevice)
+    local track = activeTracks[donorKey]
+    activeTracks[donorKey] = nil
+    activeTracks[key] = track
+    track.device = device
+    track.deviceData = deviceData
+    track.inventoryDevice = inventoryDevice
+    track.deviceIdentity = radioKey(device)
+    track.missingSince = nil
+    track.ownerInvalid = nil
+    track.unavailable = false
+    track.silentSince = nil
+    track.lastHopAt = getTimestampMs()
+    -- Force position, 3D mode and volumes to be re-applied for the new source.
+    track.emitterX, track.emitterY, track.emitterZ = nil, nil, nil
+    track.emitterIs3D = nil
+    track.volume = nil
+    track.fillerVolume = nil
+    track.cueVolume = nil
+    print("[TheRoadSoFarFM][MP][Sync] Station " .. tostring(track.channel)
+        .. " playback moved to another radio (" .. tostring(donorKey) .. " -> " .. tostring(key) .. ").")
+end
+
 local function requestStart(player, key, device, deviceData, playlistConfig)
     if isClient() then
         local frequency = deviceData:getChannel()
-        if frequency == USER_TRACKS_FREQUENCY or approvedStations[frequency] then
+        if frequency == USER_TRACKS_FREQUENCY then
+            return
+        end
+        local station = approvedStations[frequency]
+        if station and (activeTracks[key] or joinModeFor(frequency, station)) then
             return
         end
         local now = getTimestampMs()
@@ -893,7 +1217,12 @@ end
 local function requestStop(key, player)
     if isClient() then
         pendingStops[key] = nil
-        stopTrack(key)
+        -- Multiplayer: another radio of the station may still take the track over this
+        -- same tick, so it is only flagged here and stopped at the end of the update.
+        local track = activeTracks[key]
+        if track then
+            track.ownerInvalid = true
+        end
         return
     end
 
@@ -925,9 +1254,11 @@ local function stopLocalTracksForDevice(device, deviceData)
     for _, key in ipairs(keysToStop) do
         local track = activeTracks[key]
         if track then
-            print("[TheRoadSoFarFM][MP] Stopping local emitter after radio shutdown: "
+            print("[TheRoadSoFarFM][MP] Radio shut down, releasing playback: "
                 .. track.soundName .. " (" .. key .. ").")
-            stopTrack(key)
+            -- Flagged instead of stopped: the next update hands it to another radio of the
+            -- station if there is one, or stops it.
+            track.ownerInvalid = true
             worldSoundCounters[key] = nil
         end
     end
@@ -1109,7 +1440,34 @@ local function updateRadioTracks(player)
                 end
                 if isPlayingStation then
                     currentDevices[key] = true
-                    requestStart(player, key, device, deviceData, playlistConfig)
+                    -- Multiplayer: an audible device asks the server how to join. A silent
+                    -- one only starts (muted) if the current track began moments ago, so it
+                    -- stays aligned with the server clock until the player gets close.
+                    local mayStart = true
+                    local silentStart = false
+                    if isClient() and not activeTracks[key] then
+                        local ownVolume = computeTrackVolume(deviceData, device, player, inventoryDevice)
+                        local donorKey = channelTrackKey(channel)
+                        if donorKey then
+                            -- The station already plays through another radio: this one only
+                            -- takes it over when that radio can no longer carry it or when
+                            -- this one clearly sounds louder; otherwise it stays silent.
+                            if canTakeOver(donorKey, ownVolume) then
+                                adoptTrack(donorKey, key, device, deviceData, inventoryDevice)
+                            else
+                                mayStart = false
+                            end
+                        else
+                            mayStart = ownVolume > 0
+                            if not mayStart then
+                                silentStart = canStartSilently(channel)
+                                mayStart = silentStart
+                            end
+                        end
+                    end
+                    if mayStart and not silentStart then
+                        requestStart(player, key, device, deviceData, playlistConfig)
+                    end
                     updateZombieAttraction(player, key, device, deviceData, inventoryDevice)
                     local playback
                     if isClient() then
@@ -1117,20 +1475,44 @@ local function updateRadioTracks(player)
                     else
                         playback = approvedStarts[key]
                     end
-                    if playback then
+                    local joinMode
+                    if playback and mayStart and isClient() and not activeTracks[key] then
+                        joinMode = silentStart and "start" or joinModeFor(channel, playback)
+                        if not joinMode then
+                            playback = nil
+                        end
+                    end
+                    if playback and mayStart then
                         local track = startTrack(
                             key,
                             device,
                             deviceData,
                             player,
                             playback,
-                            inventoryDevice
+                            inventoryDevice,
+                            joinMode
                         )
                         if track then
                             updateTrackVolume(track, player)
-                            if not track.emitter:isPlaying(track.soundHandle) then
-                                requestAdvance(key, track)
+                            -- Only a track that is out of step with the server clock is dropped
+                            -- when out of range; aligned and waiting tracks keep running muted.
+                            if isClient() and track.joinMode == "offset" and not track.inventoryDevice
+                                and track.volume ~= nil and track.volume <= 0 then
+                                local silentNow = getTimestampMs()
+                                track.silentSince = track.silentSince or silentNow
+                                if silentNow - track.silentSince >= TheRoadSoFarFMSync.SilentStopMs then
+                                    print("[TheRoadSoFarFM][MP][Sync] Out of range, stopping unsynced local track on "
+                                        .. tostring(channel) .. ".")
+                                    stopTrack(key)
+                                    track = nil
+                                end
+                            elseif track.silentSince then
+                                track.silentSince = nil
                             end
+                        end
+                        if track and not track.waiting
+                            and not track.emitter:isPlaying(track.soundHandle) then
+                            requestAdvance(key, track)
                         end
                     end
                 elseif inventoryDevice
@@ -1183,7 +1565,13 @@ local function updateRadioTracks(player)
     local unavailableTracks = {}
     local now = getTimestampMs()
     for key, track in pairs(activeTracks) do
-        if not currentDevices[key] then
+        if isClient() and track.ownerInvalid then
+            -- No other radio of the station took the track over during this update.
+            print("[TheRoadSoFarFM][MP][Sync] No radio left to carry the station "
+                .. tostring(track.channel) .. ", stopping " .. tostring(track.soundName)
+                .. " (" .. tostring(key) .. ").")
+            unavailableTracks[#unavailableTracks + 1] = key
+        elseif not currentDevices[key] then
             if isClient() then
                 track.missingSince = track.missingSince or now
                 if now - track.missingSince >= RADIO_DEVICE_HANDOFF_WINDOW_MS then
@@ -1196,6 +1584,45 @@ local function updateRadioTracks(player)
     end
     for _, key in ipairs(unavailableTracks) do
         stopTrack(key)
+    end
+
+    if isClient() then
+        local sync = TheRoadSoFarFMSync
+        local activeFrequencies = {}
+        local audibleFrequencies = {}
+        for _, track in pairs(activeTracks) do
+            activeFrequencies[track.channel] = true
+            if track.volume ~= nil and track.volume > 0 then
+                audibleFrequencies[track.channel] = true
+            end
+        end
+
+        -- A join decision only applies to the current approach; forget it once nothing plays.
+        for frequency in pairs(joinDecisions) do
+            if not activeFrequencies[frequency] then
+                joinDecisions[frequency] = nil
+            end
+        end
+
+        for frequency in pairs(audibleFrequencies) do
+            local last = lastHeartbeatAt[frequency]
+            if not last or now - last >= sync.ListenerHeartbeatMs then
+                lastHeartbeatAt[frequency] = now
+                sendClientCommand(player, MODULE, "listenHeartbeat", {
+                    kind = "radio",
+                    id = frequency,
+                })
+            end
+        end
+        for frequency in pairs(lastHeartbeatAt) do
+            if not audibleFrequencies[frequency] then
+                lastHeartbeatAt[frequency] = nil
+                sendClientCommand(player, MODULE, "listenStop", {
+                    kind = "radio",
+                    id = frequency,
+                })
+            end
+        end
     end
 end
 

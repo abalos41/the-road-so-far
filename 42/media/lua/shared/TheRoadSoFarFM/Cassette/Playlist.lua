@@ -22,6 +22,47 @@ TheRoadSoFarFMCassette = {
     },
 }
 
+-- Stable id of a device holding the cassette, shared by clients and the server so both name
+-- the same device the same way (portable radios keep their item id when placed in the world).
+function TheRoadSoFarFMCassette.deviceId(device)
+    if not device then
+        return nil
+    end
+
+    if device.getID then
+        local id = device:getID()
+        if id ~= nil then
+            return "item:" .. tostring(id)
+        end
+    end
+
+    local modData = device.getModData and device:getModData()
+    if modData and modData.RadioItemID then
+        return "item:" .. tostring(modData.RadioItemID)
+    end
+
+    if instanceof(device, "VehiclePart") then
+        local vehicle = device:getVehicle()
+        if vehicle and vehicle.getMechanicalID then
+            return "vehicle:" .. tostring(vehicle:getMechanicalID())
+                .. ":" .. tostring(device:getId())
+        end
+    end
+
+    local square = device.getSquare and device:getSquare()
+    if square then
+        local objectIndex = device.getObjectIndex and device:getObjectIndex() or 0
+        return string.format(
+            "world:%d:%d:%d:%d",
+            square:getX(),
+            square:getY(),
+            square:getZ(),
+            objectIndex
+        )
+    end
+    return nil
+end
+
 function TheRoadSoFarFMCassette.onCreateItem(item)
     local radio = getZomboidRadio and getZomboidRadio()
     local recordedMedia = radio and radio:getRecordedMedia()

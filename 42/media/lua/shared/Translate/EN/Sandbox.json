@@ -1,5 +1,7 @@
 {
     "Sandbox_TheRoadSoFarFM": "The Road So Far FM",
     "Sandbox_TheRoadSoFarFM_DisableZombieAttraction": "Disable radio and cassette noise",
-    "Sandbox_TheRoadSoFarFM_DisableZombieAttraction_tooltip": "When enabled, The Road So Far FM radios and cassette players do not emit world sounds that attract zombies. When disabled, louder device volume attracts zombies from farther away."
+    "Sandbox_TheRoadSoFarFM_DisableZombieAttraction_tooltip": "When enabled, The Road So Far FM radios and cassette players do not emit world sounds that attract zombies. When disabled, louder device volume attracts zombies from farther away.",
+    "Sandbox_TheRoadSoFarFM_VolumePercent": "Music volume (%)",
+    "Sandbox_TheRoadSoFarFM_VolumePercent_tooltip": "Overall volume of The Road So Far FM music, for radios and cassette players, as a percentage of the normal volume. The volume slider of each device still works on top of this. 100 leaves the volume unchanged."
 }

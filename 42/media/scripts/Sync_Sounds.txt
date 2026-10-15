@@ -1,0 +1,80 @@
+module Base
+{
+    sound TRSF_MP_Tuning_1
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/radio-tuning-sound-1.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Tuning_2
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/radio-tuning-sound-2.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Tuning_3
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/radio-tuning-sound-3.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Edit_AirTonight
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-air-tonight.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Edit_BurningHeart
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-burning-heart.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Edit_Mmmbop
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-mmmbop.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Edit_Smokin
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-smokin.ogg,
+            volume = 1.0,
+        }
+    }
+}
