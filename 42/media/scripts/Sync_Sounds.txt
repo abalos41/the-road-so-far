@@ -77,4 +77,37 @@ module Base
             volume = 1.0,
         }
     }
+    sound TRSF_MP_Edit_Renegade
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-renegade.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Edit_TheTrooper
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-the-trooper.ogg,
+            volume = 1.0,
+        }
+    }
+    sound TRSF_MP_Edit_SoloMarkKnopfler
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Extra/Multiplayer/edit-solo-mark-knopfler.ogg,
+            volume = 1.0,
+        }
+    }
 }

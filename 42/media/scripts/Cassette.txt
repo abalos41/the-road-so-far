@@ -6,7 +6,6 @@ module TheRoadSoFarFM
         ItemType = base:normal,
         Weight = 0.1,
         Icon = Cassette3,
-        MediaCategory = CDs,
         WorldStaticModel = VHSBox2,
         Tooltip = Tooltip_item_DeansTop13ZeppTraxx,
         OnCreate = TheRoadSoFarFMCassette.onCreateItem,

@@ -37,6 +37,9 @@ Sync.Sounds = {
             "TRSF_MP_Edit_BurningHeart",
             "TRSF_MP_Edit_Mmmbop",
             "TRSF_MP_Edit_Smokin",
+            "TRSF_MP_Edit_Renegade",
+            "TRSF_MP_Edit_TheTrooper",
+            "TRSF_MP_Edit_SoloMarkKnopfler",
         },
     },
     cassette = {

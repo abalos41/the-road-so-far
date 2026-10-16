@@ -167,22 +167,42 @@ local function devicePosition(device, deviceData, player)
     return x, y, z
 end
 
+-- Multiplayer: distance to the device and the range at which it stops being audible.
+local function deviceDistanceAndRange(device, deviceData, player)
+    local range = deviceData:getBaseVolumeRange()
+        * deviceData:getDeviceVolume() * CASSETTE_RANGE_MULTIPLIER
+    if range <= 0 then
+        return nil, 0
+    end
+
+    local x, y, z = devicePosition(device, deviceData, player)
+    local dx, dy = player:getX() - x, player:getY() - y
+    local dz = (player:getZ() - z) * 3
+    return math.sqrt(dx * dx + dy * dy + dz * dz), range
+end
+
 -- Multiplayer: whether the local player is close enough to hear the device at all.
 local function cassetteAudible(device, deviceData, player)
     if isInventoryDevice(deviceData) then
         return true
     end
 
-    local range = deviceData:getBaseVolumeRange()
-        * deviceData:getDeviceVolume() * CASSETTE_RANGE_MULTIPLIER
-    if range <= 0 then
-        return false
+    local distance, range = deviceDistanceAndRange(device, deviceData, player)
+    return distance ~= nil and distance < range
+end
+
+-- Multiplayer: a device in the world fades out with distance like the radio station does,
+-- reaching silence at the audible range. Carried devices and singleplayer are unchanged.
+local function distanceVolumeFactor(device, deviceData, player)
+    if not isClient() or isInventoryDevice(deviceData) then
+        return 1
     end
 
-    local x, y, z = devicePosition(device, deviceData, player)
-    local dx, dy = player:getX() - x, player:getY() - y
-    local dz = (player:getZ() - z) * 3
-    return math.sqrt(dx * dx + dy * dy + dz * dz) < range
+    local distance, range = deviceDistanceAndRange(device, deviceData, player)
+    if not distance then
+        return 0
+    end
+    return math.max(0, 1 - distance / range)
 end
 
 -- Multiplayer: how a new local playback should join the shared cassette. Returns nil while
@@ -421,7 +441,10 @@ local function startCurrentSound(deviceData, state)
         state.failed = true
         return false
     end
-    state.emitter:setVolume(state.handle, deviceData:getDeviceVolume() * TheRoadSoFarFMVolume.scale())
+    state.emitter:setVolume(
+        state.handle,
+        deviceData:getDeviceVolume() * TheRoadSoFarFMVolume.scale()
+            * distanceVolumeFactor(state.device, deviceData, state.player))
     return true
 end
 
@@ -471,6 +494,7 @@ local function offsetEndingFactor(deviceData, state, sharedState)
 
     if state.cueHandle then
         local volume = deviceData:getDeviceVolume() * TheRoadSoFarFMVolume.scale()
+            * distanceVolumeFactor(state.device, deviceData, state.player)
         if state.cueVolume ~= volume then
             state.emitter:setVolume(state.cueHandle, volume * sync.CueGain)
             state.cueVolume = volume
@@ -721,6 +745,7 @@ local function processDevice(device, player, seenDevices)
             state.emitter:setVolume(
                 state.handle,
                 deviceData:getDeviceVolume() * TheRoadSoFarFMVolume.scale()
+                    * distanceVolumeFactor(device, deviceData, player)
                     * offsetEndingFactor(deviceData, state, sharedState))
             return
         end

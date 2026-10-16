@@ -2,6 +2,6 @@
     "Sandbox_TheRoadSoFarFM": "The Road So Far FM",
     "Sandbox_TheRoadSoFarFM_DisableZombieAttraction": "Desactivar el ruido de radio y casete",
     "Sandbox_TheRoadSoFarFM_DisableZombieAttraction_tooltip": "Al activarlo, las canciones de emisoras y casete de The Road So Far FM no atraen zombis. Al desactivarlo, un volumen más alto atrae zombis desde más lejos.",
-    "Sandbox_TheRoadSoFarFM_VolumePercent": "Volumen de la música (%)",
+    "Sandbox_TheRoadSoFarFM_VolumePercent": "Volumen de la música (porcentaje)",
     "Sandbox_TheRoadSoFarFM_VolumePercent_tooltip": "Volumen general de la música de The Road So Far FM, en radios y casetes, como porcentaje del volumen normal. El control de volumen de cada dispositivo sigue funcionando por encima de este valor. Con 100 el volumen no cambia."
 }

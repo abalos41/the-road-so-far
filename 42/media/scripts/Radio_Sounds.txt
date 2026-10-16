@@ -220,6 +220,50 @@ module Base
             volume = 0.332,
         }
     }
+    sound TRSF_ACDCBackInBlack
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/ACDC - Back In Black.ogg,
+            volume = 0.378,
+        }
+    }
+    sound TRSF_BlueOysterCultDontFearTheReaper
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Blue Oyster Cult - (Don't Fear) The Reaper.ogg,
+            volume = 0.510,
+        }
+    }
+    sound TRSF_BobSegerNightMoves
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/Bob Seger - Night Moves.ogg,
+            volume = 0.382,
+        }
+    }
+    sound TRSF_TheKinksYouReallyGotMe
+    {
+        category = Music,
+        loop = false,
+        is3D = false,
+        clip
+        {
+            file = media/sound/Radio/The Kinks - You Really Got Me.ogg,
+            volume = 0.439,
+        }
+    }
     sound TRSF_Commercial
     {
         category = Music,

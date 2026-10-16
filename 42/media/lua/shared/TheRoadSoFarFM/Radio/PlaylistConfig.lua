@@ -21,6 +21,10 @@ TheRoadSoFarFMConfig.Tracks = {
     "TRSF_RollingStonesSympathyForTheDevil",
     "TRSF_ThreeDogNightOne",
     "TRSF_VanHalenPanama",
+    "TRSF_ACDCBackInBlack",
+    "TRSF_BlueOysterCultDontFearTheReaper",
+    "TRSF_BobSegerNightMoves",
+    "TRSF_TheKinksYouReallyGotMe",
 }
 
 TheRoadSoFarFMConfig.TrackTitles = {
@@ -44,6 +48,10 @@ TheRoadSoFarFMConfig.TrackTitles = {
     TRSF_RollingStonesSympathyForTheDevil = "The Rolling Stones - Sympathy for the Devil",
     TRSF_ThreeDogNightOne = "Three Dog Night - One",
     TRSF_VanHalenPanama = "Van Halen - Panama",
+    TRSF_ACDCBackInBlack = "ACDC - Back in Black",
+    TRSF_BlueOysterCultDontFearTheReaper = "Blue Oyster Cult - (Don't Fear) The Reaper",
+    TRSF_BobSegerNightMoves = "Bob Seger - Night Moves",
+    TRSF_TheKinksYouReallyGotMe = "The Kinks - You Really Got Me",
 }
 
 TheRoadSoFarFMConfig.SongsBeforeCommercial = 5
