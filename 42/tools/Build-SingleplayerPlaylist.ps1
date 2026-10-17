@@ -73,7 +73,7 @@ try {
         Write-Host ""
         Write-Host "No MP3 or OGG files were found in '$playlistDirectory'."
         Write-Host "Generated User Tracks files were cleared; 100.2 MHz will not be registered."
-        Write-Host "Add songs to the folder and run this BAT again when you are ready."
+        Write-Host "Add songs to the folder and run Load_My_Songs.cmd again when you are ready."
         return
     }
 
