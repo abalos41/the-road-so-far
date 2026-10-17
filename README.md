@@ -38,7 +38,7 @@ A rare mixtape with **13 Led Zeppelin classics**, in order, for any cassette pla
 1. 📂 Open the mod folder (copy this path into the Windows Explorer address bar):
 
    ```
-   C:\Program Files (x86)\Steam\steamapps\workshop\content\108600\YOUR_WORKSHOP_ID\mods\TheRoadSoFarFM\42
+   C:\Users\%USER_PROFILE%\Zomboid\mods\TheRoadSoFarFM\42
    ```
 
 2. 💿 Copy your **MP3 or OGG** files into:
@@ -51,7 +51,7 @@ A rare mixtape with **13 Led Zeppelin classics**, in order, for any cassette pla
 
 4. 🔁 Restart the game and tune any radio to **100.2 MHz**.
 
-*Works in singleplayer only. If Steam is installed somewhere else, use that Steam folder instead. Workshop updates may remove your songs, so keep a copy of them and run the .cmd again after an update.*
+*Works in singleplayer only.*
 
 ---
 
