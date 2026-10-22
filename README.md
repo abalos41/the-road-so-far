@@ -55,6 +55,6 @@ A rare mixtape with **13 Led Zeppelin classics**, in order, for any cassette pla
 
 ---
 
-✅ No other mods are required, and nothing vanilla is replaced.
+✅ No other mods are required, and nothing vanilla is replaced. Get it on [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3821158847)! 
 
 ***Carry on, my wayward survivor.*** 🎶
